@@ -8,6 +8,13 @@
 
 #define PORT 21690
 
+/*
+After the client gets authenticated, it doesnt exit the program. You are basically 'logged in' to the server.
+You can then use the lookup and push commands to interact with the server.
+Currently, we exit the program after authentication.
+So we need to change that so that the client can keep running and interacting with the server.
+*/
+
 void print_usage() {
     printf("Usage:\n");
     printf("1. Authentication: %s <username> <password>\n", "./client");
@@ -45,29 +52,32 @@ int main(int argc, char* argv[]) {
 
     printf("Connected to main server\n");
 
-    // Handle different command types
-    if (strcmp(argv[1], "lookup") == 0) {
-        if (argc != 3) {
-            printf("Error: Lookup command requires a username\n");
-            print_usage();
-            close(server_fd);
-            return -1;
-        }
-        
-        // Format lookup message
-        snprintf(message, sizeof(message), "LOOKUP %s", argv[2]);
-    } else {
-        // Regular authentication
-        if (argc != 3) {
-            print_usage();
-            close(server_fd);
-            return -1;
-        }
+    // first we authenticate
+    if (argc == 3) {
         snprintf(message, sizeof(message), "AUTH %s %s", argv[1], argv[2]);
+    } else {
+        print_usage();
+        close(server_fd);
+        return -1;
     }
+
+    // // Handle different command types
+    // if (strcmp(argv[1], "lookup") == 0) {
+    //     if (argc != 3) {
+    //         printf("Error: Lookup command requires a username\n");
+    //         print_usage();
+    //         close(server_fd);
+    //         return -1;
+    //     }
+        
+    //     // Format lookup message
+    //     snprintf(message, sizeof(message), "LOOKUP %s", argv[2]);
+    //     printf("Sent message: %s\n", message);
+    // }
 
     // Send message to server
     ssize_t sent_bytes = send(server_fd, message, strlen(message), 0);
+    printf("Sent message: %s\n", message);
     if (sent_bytes < 0) {
         perror("Error sending message");
         close(server_fd);
@@ -83,6 +93,43 @@ int main(int argc, char* argv[]) {
     }
     buffer[len] = '\0';
     printf("\n%s\n", buffer);
+
+    // now we are authenticated, we can send other commands
+    while (1) {
+        printf("Enter command: ");
+        fgets(message, sizeof(message), stdin);
+        message[strcspn(message, "\n")] = '\0';
+        // check for lookup command
+        char command[20], username[50];
+        if (sscanf(message, "%s %s", command, username) == 2 && strcmp(command, "lookup") == 0) {
+            // Format lookup message
+            char lookup_msg[1024];
+            snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", username); // Simplified lookup format
+            printf("Sent message: %s\n", lookup_msg);
+            printf("Looking up files for user %s...\n", username);
+            
+            // Send lookup request
+            if (send(server_fd, lookup_msg, strlen(lookup_msg), 0) < 0) {
+                perror("Error sending lookup request");
+                continue;
+            }
+
+            // Receive response
+            int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
+            if (len < 0) {
+                perror("Error receiving lookup response");
+                continue;
+            }
+            buffer[len] = '\0';
+            
+            // Print the file list
+            printf("\nFile list received:\n%s\n", buffer);
+        } else {
+            printf("Invalid command. Use format: lookup <username>\n");
+        }
+
+
+    }
     
     close(server_fd);
     return 0;

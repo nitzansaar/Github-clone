@@ -141,39 +141,41 @@ int main() {
             continue;
         }
 
-        int bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-        if (bytes_received < 0) {
-            perror("TCP receive failed");
-            close(client_socket);
-            continue;
-        }
-        buffer[bytes_received] = '\0';
-
-        char command[20], arg1[50], arg2[50];
-        sscanf(buffer, "%s %s %s", command, arg1, arg2);
-
-        if (strcmp(command, "AUTH") == 0) {
-            // Handle authentication
-            current_session = handle_auth(udp_socket, server_a_addr, arg1, arg2);
-            const char* response;
-            
-            if (current_session.is_guest && current_session.is_authenticated) {
-                response = "Authentication successful - Welcome guest! Note: Limited access rights applied";
-            } else if (current_session.is_authenticated) {
-                response = "Authentication successful - Welcome member!";
-            } else {
-                response = "Authentication failed - Invalid credentials";
+        // Keep connection alive for this client
+        while (1) {
+            int bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+            if (bytes_received <= 0) {
+                // Client disconnected or error
+                break;
             }
-            
-            send(client_socket, response, strlen(response), 0);
-            
-        } else if (strcmp(command, "LOOKUP") == 0) {
-            // Handle lookup request with current session
-            char* lookup_response = handle_lookup(udp_socket, server_r_addr, arg1, &current_session);
-            send(client_socket, lookup_response, strlen(lookup_response), 0);
+            buffer[bytes_received] = '\0';
+
+            char command[20], arg1[50], arg2[50];
+            sscanf(buffer, "%s %s %s", command, arg1, arg2);
+
+            if (strcmp(command, "AUTH") == 0) {
+                // Handle authentication
+                current_session = handle_auth(udp_socket, server_a_addr, arg1, arg2);
+                const char* response;
+                
+                if (current_session.is_guest && current_session.is_authenticated) {
+                    response = "Authentication successful - Welcome guest! Note: Limited access rights applied";
+                } else if (current_session.is_authenticated) {
+                    response = "Authentication successful - Welcome member!";
+                } else {
+                    response = "Authentication failed - Invalid credentials";
+                }
+                
+                send(client_socket, response, strlen(response), 0);
+                
+            } else if (strcmp(command, "LOOKUP") == 0) {
+                // Handle lookup request with current session
+                char* lookup_response = handle_lookup(udp_socket, server_r_addr, arg1, &current_session);
+                send(client_socket, lookup_response, strlen(lookup_response), 0);
+            }
         }
 
-        close(client_socket);
+        close(client_socket);  // Only close when client disconnects
     }
 
     close(tcp_socket);
