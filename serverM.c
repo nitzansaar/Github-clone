@@ -64,11 +64,6 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
         return "Error: Please authenticate first";
     }
     
-    // Check access rights for members (guests can look up any user)
-    if (!session->is_guest && strcmp(session->username, target_username) != 0) {
-        return "Error: Members can only look up their own files";
-    }
-    
     // Send lookup request to Server R
     snprintf(buffer, BUFFER_SIZE, "LOOKUP %s %s", target_username, session->username);
     
