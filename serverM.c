@@ -93,6 +93,12 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    int reuse = 1;
+    if (setsockopt(tcp_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
+    }
+
     struct sockaddr_in tcp_addr, server_a_addr, server_r_addr;
     
     memset(&tcp_addr, 0, sizeof(tcp_addr));

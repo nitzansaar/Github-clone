@@ -15,6 +15,9 @@ Currently, we exit the program after authentication.
 So we need to change that so that the client can keep running and interacting with the server.
 */
 
+// Store the authenticated username globally
+char authenticated_user[50] = {0};
+
 void print_usage() {
     printf("Usage:\n");
     printf("1. Authentication: %s <username> <password>\n", "./client");
@@ -61,20 +64,6 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // // Handle different command types
-    // if (strcmp(argv[1], "lookup") == 0) {
-    //     if (argc != 3) {
-    //         printf("Error: Lookup command requires a username\n");
-    //         print_usage();
-    //         close(server_fd);
-    //         return -1;
-    //     }
-        
-    //     // Format lookup message
-    //     snprintf(message, sizeof(message), "LOOKUP %s", argv[2]);
-    //     printf("Sent message: %s\n", message);
-    // }
-
     // Send message to server
     ssize_t sent_bytes = send(server_fd, message, strlen(message), 0);
     printf("Sent message: %s\n", message);
@@ -94,21 +83,35 @@ int main(int argc, char* argv[]) {
     buffer[len] = '\0';
     printf("\n%s\n", buffer);
 
+    // After successful authentication, store the username
+    if (strstr(buffer, "Authentication successful") != NULL) {
+        strncpy(authenticated_user, argv[1], sizeof(authenticated_user) - 1);
+    }
+
     // now we are authenticated, we can send other commands
     while (1) {
         printf("Enter command: ");
         fgets(message, sizeof(message), stdin);
         message[strcspn(message, "\n")] = '\0';
-        // check for lookup command
+        
         char command[20], username[50];
-        if (sscanf(message, "%s %s", command, username) == 2 && strcmp(command, "lookup") == 0) {
-            // Format lookup message
+        int parsed = sscanf(message, "%s %s", command, username);
+        
+        if (parsed >= 1 && strcmp(command, "lookup") == 0) {
             char lookup_msg[1024];
-            snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", username); // Simplified lookup format
-            printf("Sent message: %s\n", lookup_msg);
-            printf("Looking up files for user %s...\n", username);
+            if (parsed == 1) {
+                // No username specified, use authenticated user
+                snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", authenticated_user);
+                printf("Looking up your files...\n");
+            } else {
+                // Username specified
+                snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", username);
+                printf("Looking up files for user %s...\n", username);
+            }
             
             // Send lookup request
+            printf("Sent message: %s\n", lookup_msg);
+            
             if (send(server_fd, lookup_msg, strlen(lookup_msg), 0) < 0) {
                 perror("Error sending lookup request");
                 continue;
