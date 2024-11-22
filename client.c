@@ -22,6 +22,7 @@ char authenticated_user[50] = {0};
 // Move these function prototypes to be together at the top
 void handle_lookup_command(int server_fd, const char* command, const char* username, int parsed);
 void handle_push_command(int server_fd, const char* command, const char* filename, int parsed);
+void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed);
 int setup_connection(struct sockaddr_in* server_address);
 int authenticate_user(int server_fd, const char* username, const char* password);
 
@@ -177,6 +178,33 @@ void handle_push_command(int server_fd, const char* command, const char* filenam
     printf("\nServer response:\n%s\n", buffer);
 }
 
+void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed) {
+    char buffer[1024];
+    char deploy_msg[1024];
+    
+    // Construct deploy message with authenticated user
+    snprintf(deploy_msg, sizeof(deploy_msg), "DEPLOY %s", authenticated_user);
+    printf("Requesting deployment for all files of user: %s\n", authenticated_user);
+    
+    // Send deploy request
+    printf("Sent message: %s\n", deploy_msg);
+    if (send(server_fd, deploy_msg, strlen(deploy_msg), 0) < 0) {
+        perror("Error sending deploy request");
+        return;
+    }
+
+    // Receive response
+    int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
+    if (len < 0) {
+        perror("Error receiving deploy response");
+        return;
+    }
+    buffer[len] = '\0';
+    
+    // Print the server's response
+    printf("\nServer response:\n%s\n", buffer);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2 || argc > 3) {
         print_usage();
@@ -220,10 +248,13 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(command, "push") == 0) {
             // handle push command
             handle_push_command(server_fd, command, username, parsed);
+        } else if (strcmp(command, "deploy") == 0) {
+            handle_deploy_command(server_fd, command, username, parsed);
         } else {
             printf("Invalid command. Available commands:\n");
             printf("1. lookup <username>\n");
             printf("2. push <filename>\n");
+            printf("3. deploy <filename>\n");
         }
 
 

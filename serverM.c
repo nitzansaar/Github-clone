@@ -9,6 +9,7 @@
 #define MAIN_TCP_PORT 21690
 #define SERVER_A_PORT 21693
 #define SERVER_R_PORT 21694
+#define SERVER_D_PORT 21695
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 100
 
@@ -115,6 +116,36 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     return response;
 }
 
+char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr, 
+                   const char* username, const UserSession* session) {
+    static char response[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+
+    // Check if user is authenticated and is not a guest
+    if (!session->is_authenticated || session->is_guest) {
+        return "Error: Only authenticated members can deploy files";
+    }
+    
+    // Send deploy request to Server D
+    snprintf(buffer, BUFFER_SIZE, "DEPLOY %s", username);
+    
+    if (sendto(udp_socket, buffer, strlen(buffer), 0, 
+               (struct sockaddr*)&server_d_addr, sizeof(server_d_addr)) < 0) {
+        return "Error: Failed to send deploy request";
+    }
+    
+    // Receive response from Server D
+    socklen_t server_len = sizeof(server_d_addr);
+    int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
+                               (struct sockaddr*)&server_d_addr, &server_len);
+    if (response_len < 0) {
+        return "Error: Failed to receive deploy response";
+    }
+    
+    response[response_len] = '\0';
+    return response;
+}
+
 int main() {
     int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
     int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -130,7 +161,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in tcp_addr, server_a_addr, server_r_addr;
+    struct sockaddr_in tcp_addr, server_a_addr, server_r_addr, server_d_addr;
     
     memset(&tcp_addr, 0, sizeof(tcp_addr));
     tcp_addr.sin_family = AF_INET;
@@ -146,6 +177,11 @@ int main() {
     server_r_addr.sin_family = AF_INET;
     server_r_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     server_r_addr.sin_port = htons(SERVER_R_PORT);
+
+    memset(&server_d_addr, 0, sizeof(server_d_addr));
+    server_d_addr.sin_family = AF_INET;
+    server_d_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_d_addr.sin_port = htons(SERVER_D_PORT);
 
     if (bind(tcp_socket, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) < 0) {
         perror("TCP bind failed");
@@ -232,6 +268,10 @@ int main() {
                         }
                     }
                 }
+            } else if (strcmp(command, "DEPLOY") == 0) {
+                // Handle deploy request with current session
+                char* deploy_response = handle_deploy(udp_socket, server_d_addr, arg1, &current_session);
+                send(client_socket, deploy_response, strlen(deploy_response), 0);
             }
         }
 
