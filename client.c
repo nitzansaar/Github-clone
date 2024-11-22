@@ -19,13 +19,16 @@ So we need to change that so that the client can keep running and interacting wi
 // Store the authenticated username globally
 char authenticated_user[50] = {0};
 
-// Move these function prototypes to be together at the top
+// Add this with the other function prototypes near the top of the file
+void log_operation(const char* username, const char* operation, const char* details);
+
 void handle_lookup_command(int server_fd, const char* command, const char* username, int parsed);
 void handle_push_command(int server_fd, const char* command, const char* filename, int parsed);
 void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed);
 int setup_connection(struct sockaddr_in* server_address);
 int authenticate_user(int server_fd, const char* username, const char* password);
 void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed);
+void handle_log_command(int server_fd);
 
 void print_usage() {
     printf("Usage:\n");
@@ -66,6 +69,13 @@ void handle_lookup_command(int server_fd, const char* command, const char* usern
     
     // Print the file list
     printf("\nFile list received:\n%s\n", buffer);
+    
+    // Log the lookup operation
+    if (parsed == 1) {
+        log_operation(authenticated_user, "LOOKUP", authenticated_user);
+    } else {
+        log_operation(authenticated_user, "LOOKUP", username);
+    }
 }
 
 int setup_connection(struct sockaddr_in* server_address) {
@@ -238,6 +248,39 @@ void handle_remove_command(int server_fd, const char* command, const char* filen
     printf("\nServer response:\n%s\n", buffer);
 }
 
+void handle_log_command(int server_fd) {
+    char buffer[1024];
+    
+    // Send log request
+    if (send(server_fd, "LOG", strlen("LOG"), 0) < 0) {
+        perror("Error sending log request");
+        return;
+    }
+
+    // Receive response
+    int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
+    if (len < 0) {
+        perror("Error receiving log response");
+        return;
+    }
+    buffer[len] = '\0';
+    
+    // Print the server's response
+    printf("\nOperation History:\n%s\n", buffer);
+}
+
+// Add this function implementation if it doesn't exist elsewhere
+void log_operation(const char* username, const char* operation, const char* details) {
+    char log_msg[1024];
+    snprintf(log_msg, sizeof(log_msg), "LOG_ENTRY %s %s %s", username, operation, details);
+    
+    FILE* log_file = fopen("operations.log", "a");
+    if (log_file) {
+        fprintf(log_file, "%s\n", log_msg);
+        fclose(log_file);
+    }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2 || argc > 3) {
         print_usage();
@@ -285,12 +328,15 @@ int main(int argc, char* argv[]) {
             handle_deploy_command(server_fd, command, username, parsed);
         } else if (strcmp(command, "remove") == 0) {
             handle_remove_command(server_fd, command, username, parsed);
+        } else if (strcmp(command, "log") == 0) {
+            handle_log_command(server_fd);
         } else {
             printf("Invalid command. Available commands:\n");
             printf("1. lookup <username>\n");
             printf("2. push <filename>\n");
             printf("3. deploy <filename>\n");
             printf("4. remove <filename>\n");
+            printf("5. log\n");
         }
 
 

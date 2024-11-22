@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <ctype.h>
+#include <time.h>
 
 #define MAIN_TCP_PORT 21690
 #define SERVER_A_PORT 21693
@@ -12,6 +13,9 @@
 #define SERVER_D_PORT 21695
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 100
+
+// Add this prototype near the top of the file, with other function prototypes
+void log_operation(const char* username, const char* operation, const char* details);
 
 typedef struct {
     char username[50];
@@ -83,6 +87,12 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     }
     
     response[response_len] = '\0';
+    
+    // Log successful lookup operation
+    if (strstr(response, "Error") == NULL) {
+        log_operation(session->username, "LOOKUP", target_username);
+    }
+    
     return response;
 }
 
@@ -113,6 +123,9 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     }
     
     response[response_len] = '\0';
+    if (strstr(response, "successfully") != NULL) {
+        log_operation(session->username, "PUSH", filename);
+    }
     return response;
 }
 
@@ -143,6 +156,9 @@ char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr,
     }
     
     response[response_len] = '\0';
+    if (strstr(response, "successful") != NULL) {
+        log_operation(session->username, "DEPLOY", "all files");
+    }
     return response;
 }
 
@@ -173,7 +189,62 @@ char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr,
     }
     
     response[response_len] = '\0';
+    if (strstr(response, "successfully") != NULL) {
+        log_operation(session->username, "REMOVE", filename);
+    }
     return response;
+}
+
+char* handle_log_command(const UserSession* session) {
+    static char response[BUFFER_SIZE * 10];  // Larger buffer for log history
+    
+    // Check if user is authenticated and is not a guest
+    if (!session->is_authenticated || session->is_guest) {
+        return "Error: Only authenticated members can view logs";
+    }
+    
+    FILE* log_file = fopen("server_logs.txt", "r");
+    if (!log_file) {
+        return "Error: Could not access log history";
+    }
+    
+    // Initialize response with header
+    snprintf(response, BUFFER_SIZE * 10, "Operation history for user %s:\n", session->username);
+    
+    char line[BUFFER_SIZE];
+    // Skip header if present
+    fgets(line, sizeof(line), log_file);
+    
+    // Read each line and collect all logs for the user
+    while (fgets(line, sizeof(line), log_file)) {
+        char log_username[50];
+        // Extract username from log line
+        if (sscanf(line, "[%*[^]]] %s", log_username) == 1) {
+            // If this log is for our user, append it to response
+            if (strcmp(log_username, session->username) == 0) {
+                strcat(response, line);
+            }
+        }
+    }
+    
+    fclose(log_file);
+    return response;
+}
+
+void log_operation(const char* username, const char* operation, const char* details) {
+    FILE* log_file = fopen("server_logs.txt", "a");
+    if (!log_file) {
+        perror("Cannot open log file");
+        return;
+    }
+    
+    time_t now = time(NULL);
+    char timestamp[26];
+    ctime_r(&now, timestamp);
+    timestamp[24] = '\0';  // Remove newline
+    
+    fprintf(log_file, "[%s] %s %s %s\n", timestamp, username, operation, details);
+    fclose(log_file);
 }
 
 int main() {
@@ -306,6 +377,9 @@ int main() {
                 // Handle remove request with current session
                 char* remove_response = handle_remove(udp_socket, server_r_addr, arg1, &current_session);
                 send(client_socket, remove_response, strlen(remove_response), 0);
+            } else if (strcmp(command, "LOG") == 0) {
+                char* log_response = handle_log_command(&current_session);
+                send(client_socket, log_response, strlen(log_response), 0);
             }
         }
 
