@@ -54,6 +54,43 @@ char* get_user_files(const char* username) {
     return result;
 }
 
+int file_exists(const char* username, const char* filename) {
+    FILE* file = fopen("filenames.txt", "r");
+    if (!file) return 0;
+
+    char line[BUFFER_SIZE];
+    char current_username[100], current_filename[100];
+    
+    // Skip header
+    fgets(line, sizeof(line), file);
+    
+    while (fgets(line, sizeof(line), file)) {
+        sscanf(line, "%s %s", current_username, current_filename);
+        if (strcmp(current_username, username) == 0 && 
+            strcmp(current_filename, filename) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+    
+    fclose(file);
+    return 0;
+}
+
+void add_file_entry(const char* username, const char* filename) {
+    FILE* file = fopen("filenames.txt", "a");
+    if (!file) {
+        perror("Cannot open filenames.txt for writing");
+        return;
+    }
+    
+    // Add new entry
+    fprintf(file, "%s %s\n", username, filename);
+    fclose(file);
+    
+    printf("Server R: Added new file entry - User: %s, File: %s\n", username, filename);
+}
+
 int main() {
     int server_fd;
     struct sockaddr_in address;
@@ -89,13 +126,47 @@ int main() {
         printf("Server R received lookup request for user: %s from user: %s\n", 
                username, requesting_user);
 
-        char* files_list = get_user_files(username);
-        printf("DEBUG - Sending response:\n%s\n", files_list);
-        
-        sendto(server_fd, files_list, strlen(files_list), 0,
-               (struct sockaddr *)&address, addrlen);
-        
-        printf("Server R sent file list back to Main Server\n");
+        if (strcmp(request_type, "PUSH") == 0) {
+            char filename[50];
+            sscanf(buffer, "PUSH %s %s", username, filename);
+            printf("Server R received push request - User: %s, File: %s\n", username, filename);
+
+            if (file_exists(username, filename)) {
+                sprintf(buffer, "File exists. Do you want to overwrite?");
+                sendto(server_fd, buffer, strlen(buffer), 0,
+                       (struct sockaddr *)&address, addrlen);
+                
+                // Wait for overwrite response
+                len = recvfrom(server_fd, buffer, BUFFER_SIZE, 0, 
+                              (struct sockaddr *)&address, (socklen_t*)&addrlen);
+                buffer[len] = '\0';
+                
+                char response_type[20], decision[10];
+                sscanf(buffer, "%s %s", response_type, decision);
+                
+                if (strcmp(decision, "Y") == 0) {
+                    // File already exists, no need to add new entry
+                    sprintf(buffer, "File overwritten successfully");
+                } else {
+                    sprintf(buffer, "Push cancelled");
+                }
+            } else {
+                // Add new file entry to filenames.txt
+                add_file_entry(username, filename);
+                sprintf(buffer, "File pushed successfully");
+            }
+            
+            sendto(server_fd, buffer, strlen(buffer), 0,
+                   (struct sockaddr *)&address, addrlen);
+        } else {
+            char* files_list = get_user_files(username);
+            printf("DEBUG - Sending response:\n%s\n", files_list);
+            
+            sendto(server_fd, files_list, strlen(files_list), 0,
+                   (struct sockaddr *)&address, addrlen);
+            
+            printf("Server R sent file list back to Main Server\n");
+        }
     }
 
     close(server_fd);

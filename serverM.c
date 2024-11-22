@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <ctype.h>
 
 #define MAIN_TCP_PORT 21690
 #define SERVER_A_PORT 21693
@@ -78,6 +79,36 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
                                (struct sockaddr*)&server_r_addr, &server_len);
     if (response_len < 0) {
         return "Error: Failed to receive lookup response";
+    }
+    
+    response[response_len] = '\0';
+    return response;
+}
+
+// Add this function after handle_lookup
+char* handle_push(int udp_socket, struct sockaddr_in server_r_addr, 
+                 const char* username, const char* filename, const UserSession* session) {
+    static char response[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+
+    if (!session->is_authenticated || session->is_guest) {
+        return "Error: Only authenticated members can push files";
+    }
+    
+    // Send push request to Server R
+    snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
+    
+    if (sendto(udp_socket, buffer, strlen(buffer), 0, 
+               (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
+        return "Error: Failed to send push request";
+    }
+    
+    // Receive response from Server R
+    socklen_t server_len = sizeof(server_r_addr);
+    int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
+                               (struct sockaddr*)&server_r_addr, &server_len);
+    if (response_len < 0) {
+        return "Error: Failed to receive push response";
     }
     
     response[response_len] = '\0';
@@ -173,6 +204,34 @@ int main() {
                 // Handle lookup request with current session
                 char* lookup_response = handle_lookup(udp_socket, server_r_addr, arg1, &current_session);
                 send(client_socket, lookup_response, strlen(lookup_response), 0);
+            } else if (strcmp(command, "PUSH") == 0) {
+                // Handle push request with current session
+                char* push_response = handle_push(udp_socket, server_r_addr, arg1, arg2, &current_session);
+                send(client_socket, push_response, strlen(push_response), 0);
+                
+                // If file exists, wait for overwrite response
+                if (strstr(push_response, "File exists") != NULL) {
+                    bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+                    if (bytes_received > 0) {
+                        buffer[bytes_received] = '\0';
+                        
+                        // Forward overwrite response to Server R
+                        if (sendto(udp_socket, buffer, strlen(buffer), 0, 
+                                  (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
+                            send(client_socket, "Error: Failed to process overwrite response", 42, 0);
+                            continue;
+                        }
+                        
+                        // Get final response from Server R
+                        socklen_t server_len = sizeof(server_r_addr);
+                        int response_len = recvfrom(udp_socket, buffer, BUFFER_SIZE - 1, 0,
+                                              (struct sockaddr*)&server_r_addr, &server_len);
+                        if (response_len > 0) {
+                            buffer[response_len] = '\0';
+                            send(client_socket, buffer, strlen(buffer), 0);
+                        }
+                    }
+                }
             }
         }
 
