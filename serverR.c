@@ -91,6 +91,47 @@ void add_file_entry(const char* username, const char* filename) {
     printf("Server R: Added new file entry - User: %s, File: %s\n", username, filename);
 }
 
+int remove_file_entry(const char* username, const char* filename) {
+    FILE* file = fopen("filenames.txt", "r");
+    FILE* temp = fopen("temp.txt", "w");
+    if (!file || !temp) {
+        if (file) fclose(file);
+        if (temp) fclose(temp);
+        return 0;
+    }
+    
+    char line[BUFFER_SIZE];
+    int found = 0;
+    
+    // Copy header
+    fgets(line, sizeof(line), file);
+    fprintf(temp, "%s", line);
+    
+    // Copy all lines except the one to be removed
+    while (fgets(line, sizeof(line), file)) {
+        char current_username[100], current_filename[100];
+        char line_copy[BUFFER_SIZE];
+        strcpy(line_copy, line);
+        sscanf(line, "%s %s", current_username, current_filename);
+        
+        if (strcmp(current_username, username) == 0 && 
+            strcmp(current_filename, filename) == 0) {
+            found = 1;
+            continue;
+        }
+        fprintf(temp, "%s", line_copy);
+    }
+    
+    fclose(file);
+    fclose(temp);
+    
+    // Replace original file with temp file
+    remove("filenames.txt");
+    rename("temp.txt", "filenames.txt");
+    
+    return found;
+}
+
 int main() {
     int server_fd;
     struct sockaddr_in address;
@@ -154,6 +195,19 @@ int main() {
                 // Add new file entry to filenames.txt
                 add_file_entry(username, filename);
                 sprintf(buffer, "File pushed successfully");
+            }
+            
+            sendto(server_fd, buffer, strlen(buffer), 0,
+                   (struct sockaddr *)&address, addrlen);
+        } else if (strcmp(request_type, "REMOVE") == 0) {
+            char filename[50];
+            sscanf(buffer, "REMOVE %s %s", username, filename);
+            printf("Server R received remove request - User: %s, File: %s\n", username, filename);
+
+            if (remove_file_entry(username, filename)) {
+                sprintf(buffer, "File removed successfully");
+            } else {
+                sprintf(buffer, "File not found");
             }
             
             sendto(server_fd, buffer, strlen(buffer), 0,

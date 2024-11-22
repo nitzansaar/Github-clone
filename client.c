@@ -25,6 +25,7 @@ void handle_push_command(int server_fd, const char* command, const char* filenam
 void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed);
 int setup_connection(struct sockaddr_in* server_address);
 int authenticate_user(int server_fd, const char* username, const char* password);
+void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed);
 
 void print_usage() {
     printf("Usage:\n");
@@ -205,6 +206,38 @@ void handle_deploy_command(int server_fd, const char* command, const char* unuse
     printf("\nServer response:\n%s\n", buffer);
 }
 
+void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed) {
+    char buffer[1024];
+    char remove_msg[1024];
+    
+    // Check if command format is correct (remove <filename>)
+    if (parsed != 2) {
+        printf("Invalid remove command format. Use: remove <filename>\n");
+        return;
+    }
+    
+    // Construct remove message with authenticated user and filename
+    snprintf(remove_msg, sizeof(remove_msg), "REMOVE %s", filename);
+    printf("Requesting removal of file: %s\n", filename);
+    
+    // Send remove request
+    if (send(server_fd, remove_msg, strlen(remove_msg), 0) < 0) {
+        perror("Error sending remove request");
+        return;
+    }
+
+    // Receive response
+    int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
+    if (len < 0) {
+        perror("Error receiving remove response");
+        return;
+    }
+    buffer[len] = '\0';
+    
+    // Print the server's response
+    printf("\nServer response:\n%s\n", buffer);
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2 || argc > 3) {
         print_usage();
@@ -250,11 +283,14 @@ int main(int argc, char* argv[]) {
             handle_push_command(server_fd, command, username, parsed);
         } else if (strcmp(command, "deploy") == 0) {
             handle_deploy_command(server_fd, command, username, parsed);
+        } else if (strcmp(command, "remove") == 0) {
+            handle_remove_command(server_fd, command, username, parsed);
         } else {
             printf("Invalid command. Available commands:\n");
             printf("1. lookup <username>\n");
             printf("2. push <filename>\n");
             printf("3. deploy <filename>\n");
+            printf("4. remove <filename>\n");
         }
 
 

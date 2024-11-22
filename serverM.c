@@ -146,6 +146,36 @@ char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr,
     return response;
 }
 
+char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr, 
+                   const char* filename, const UserSession* session) {
+    static char response[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+
+    // Check if user is authenticated and is not a guest
+    if (!session->is_authenticated || session->is_guest) {
+        return "Error: Only authenticated members can remove files";
+    }
+    
+    // Send remove request to Server R
+    snprintf(buffer, BUFFER_SIZE, "REMOVE %s %s", session->username, filename);
+    
+    if (sendto(udp_socket, buffer, strlen(buffer), 0, 
+               (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
+        return "Error: Failed to send remove request";
+    }
+    
+    // Receive response from Server R
+    socklen_t server_len = sizeof(server_r_addr);
+    int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
+                               (struct sockaddr*)&server_r_addr, &server_len);
+    if (response_len < 0) {
+        return "Error: Failed to receive remove response";
+    }
+    
+    response[response_len] = '\0';
+    return response;
+}
+
 int main() {
     int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
     int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -272,6 +302,10 @@ int main() {
                 // Handle deploy request with current session
                 char* deploy_response = handle_deploy(udp_socket, server_d_addr, arg1, &current_session);
                 send(client_socket, deploy_response, strlen(deploy_response), 0);
+            } else if (strcmp(command, "REMOVE") == 0) {
+                // Handle remove request with current session
+                char* remove_response = handle_remove(udp_socket, server_r_addr, arg1, &current_session);
+                send(client_socket, remove_response, strlen(remove_response), 0);
             }
         }
 
