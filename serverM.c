@@ -36,6 +36,8 @@ UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr,
         return session;
     }
     
+    printf("Server M has sent authentication request to Server A\n");
+    
     socklen_t server_len = sizeof(server_a_addr);
     int response_len = recvfrom(udp_socket, buffer, BUFFER_SIZE - 1, 0,
                                (struct sockaddr*)&server_a_addr, &server_len);
@@ -43,6 +45,8 @@ UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr,
         perror("UDP receive from ServerA failed");
         return session;
     }
+    
+    printf("The main server has received the response from server A using UDP over %d\n", MAIN_TCP_PORT);
     
     buffer[response_len] = '\0';
     
@@ -78,6 +82,8 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
         return "Error: Failed to send lookup request";
     }
     
+    printf("The main server has sent the lookup request to server R.\n");
+    
     // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
     int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
@@ -85,6 +91,8 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     if (response_len < 0) {
         return "Error: Failed to receive lookup response";
     }
+    
+    printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
     
     response[response_len] = '\0';
     
@@ -96,7 +104,7 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     return response;
 }
 
-// Add this function after handle_lookup
+// Function to handle push requests
 char* handle_push(int udp_socket, struct sockaddr_in server_r_addr, 
                  const char* username, const char* filename, const UserSession* session) {
     static char response[BUFFER_SIZE];
@@ -113,6 +121,7 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
                (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
         return "Error: Failed to send push request";
     }
+    printf("The main server has sent the push request to server R.\n");
     
     // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
@@ -123,6 +132,14 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     }
     
     response[response_len] = '\0';
+    
+    // Print appropriate message based on response type
+    if (strstr(response, "File exists") != NULL) {
+        printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", MAIN_TCP_PORT);
+    } else {
+        printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
+    }
+    
     if (strstr(response, "successfully") != NULL) {
         log_operation(session->username, "PUSH", filename);
     }
@@ -294,7 +311,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    printf("Main server is up and running\n");
+    printf("Server M is up and running using UDP on port %d\n", MAIN_TCP_PORT);
 
     // Keep track of authenticated sessions
     UserSession current_session = {0};
@@ -323,6 +340,12 @@ int main() {
             sscanf(buffer, "%s %s %s", command, arg1, arg2);
 
             if (strcmp(command, "AUTH") == 0) {
+                // Print received credentials (with hidden password)
+                char hidden_password[50];
+                memset(hidden_password, '*', strlen(arg2));
+                hidden_password[strlen(arg2)] = '\0';
+                printf("Server M has received username %s and password %s\n", arg1, hidden_password);
+                
                 // Handle authentication
                 current_session = handle_auth(udp_socket, server_a_addr, arg1, arg2);
                 const char* response;
@@ -336,21 +359,44 @@ int main() {
                 }
                 
                 send(client_socket, response, strlen(response), 0);
+                printf("The main server has sent the response from server A to client using TCP over port %d\n", MAIN_TCP_PORT);
                 
             } else if (strcmp(command, "LOOKUP") == 0) {
+                // Print appropriate message based on user type
+                if (current_session.is_guest) {
+                    printf("The main server has received a lookup request from Guest to lookup %s's repository using TCP over port %d.\n", 
+                           arg1, MAIN_TCP_PORT);
+                } else {
+                    printf("The main server has received a lookup request from %s to lookup %s's repository using TCP over port %d.\n", 
+                           current_session.username, arg1, MAIN_TCP_PORT);
+                }
+                
                 // Handle lookup request with current session
                 char* lookup_response = handle_lookup(udp_socket, server_r_addr, arg1, &current_session);
                 send(client_socket, lookup_response, strlen(lookup_response), 0);
+                printf("The main server has sent the response to the client.\n");
             } else if (strcmp(command, "PUSH") == 0) {
+                // Print received push request message
+                printf("The main server has received a push request from %s, using TCP over port %d.\n", 
+                       current_session.username, MAIN_TCP_PORT);
+                
                 // Handle push request with current session
                 char* push_response = handle_push(udp_socket, server_r_addr, arg1, arg2, &current_session);
                 send(client_socket, push_response, strlen(push_response), 0);
                 
-                // If file exists, wait for overwrite response
-                if (strstr(push_response, "File exists") != NULL) {
+                // For non-overwrite responses
+                if (strstr(push_response, "File exists") == NULL) {
+                    printf("The main server has sent the response to the client.\n");
+                } else {
+                    // For overwrite confirmation requests
+                    printf("The main server has sent the overwrite confirmation request to the client.\n");
+                    
                     bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
                     if (bytes_received > 0) {
                         buffer[bytes_received] = '\0';
+                        
+                        printf("The main server has received the overwrite confirmation response from %s using TCP over port %d\n", 
+                               current_session.username, MAIN_TCP_PORT);
                         
                         // Forward overwrite response to Server R
                         if (sendto(udp_socket, buffer, strlen(buffer), 0, 
@@ -358,6 +404,7 @@ int main() {
                             send(client_socket, "Error: Failed to process overwrite response", 42, 0);
                             continue;
                         }
+                        printf("The main server has sent the overwrite confirmation response to server R.\n");
                         
                         // Get final response from Server R
                         socklen_t server_len = sizeof(server_r_addr);
@@ -365,7 +412,9 @@ int main() {
                                               (struct sockaddr*)&server_r_addr, &server_len);
                         if (response_len > 0) {
                             buffer[response_len] = '\0';
+                            printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
                             send(client_socket, buffer, strlen(buffer), 0);
+                            printf("The main server has sent the response to the client.\n");
                         }
                     }
                 }

@@ -269,7 +269,6 @@ void handle_log_command(int server_fd) {
     printf("\nOperation History:\n%s\n", buffer);
 }
 
-// Add this function implementation if it doesn't exist elsewhere
 void log_operation(const char* username, const char* operation, const char* details) {
     char log_msg[1024];
     snprintf(log_msg, sizeof(log_msg), "LOG_ENTRY %s %s %s", username, operation, details);
@@ -312,7 +311,12 @@ int main(int argc, char* argv[]) {
 
     // now we are authenticated, we can send other commands
     while (1) {
-        printf("Enter command: ");
+        printf("Please enter the command:\n");
+        printf("<lookup <username>>\n");
+        printf("<push <filename>>\n");
+        printf("<remove <filename>>\n");
+        printf("<deploy>\n");
+        printf("<log>\n");
         fgets(message, sizeof(message), stdin);
         message[strcspn(message, "\n")] = '\0';
         
