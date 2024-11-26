@@ -5,9 +5,11 @@
 #include <arpa/inet.h>      
 #include <netinet/in.h>     
 #include <sys/socket.h>     
-#include <ctype.h>  // Add this at the top with other includes
-
+#include <ctype.h> 
+#include <stdbool.h>
 #define PORT 21690
+//add another port for guests so they can both connect at the same time
+#define GUEST_PORT 21691
 
 /*
 After the client gets authenticated, it doesnt exit the program. You are basically 'logged in' to the server.
@@ -25,7 +27,7 @@ void log_operation(const char* username, const char* operation, const char* deta
 void handle_lookup_command(int server_fd, const char* command, const char* username, int parsed);
 void handle_push_command(int server_fd, const char* command, const char* filename, int parsed);
 void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed);
-int setup_connection(struct sockaddr_in* server_address);
+int setup_connection(struct sockaddr_in* server_address, bool is_guest);
 int authenticate_user(int server_fd, const char* username, const char* password);
 void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed);
 void handle_log_command(int server_fd);
@@ -78,7 +80,7 @@ void handle_lookup_command(int server_fd, const char* command, const char* usern
     }
 }
 
-int setup_connection(struct sockaddr_in* server_address) {
+int setup_connection(struct sockaddr_in* server_address, bool is_guest) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("error creating client socket");
@@ -86,7 +88,11 @@ int setup_connection(struct sockaddr_in* server_address) {
     }
 
     server_address->sin_family = AF_INET;
-    server_address->sin_port = htons(PORT);
+    if (is_guest) {
+        server_address->sin_port = htons(GUEST_PORT);
+    } else {
+        server_address->sin_port = htons(PORT);
+    }
     server_address->sin_addr.s_addr = inet_addr("127.0.0.1");
 
     if (connect(server_fd, (struct sockaddr*)server_address, sizeof(*server_address)) < 0) {
@@ -112,6 +118,7 @@ int authenticate_user(int server_fd, const char* username, const char* password)
         perror("Error sending message");
         return -1;
     }
+    printf("test\n");
 
     // Receive response
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
@@ -290,7 +297,7 @@ int main(int argc, char* argv[]) {
     char buffer[1024];
     char message[1024];
 
-    int server_fd = setup_connection(&server_address);
+    int server_fd = setup_connection(&server_address, (argc == 3 && strcmp(argv[1], "guest") == 0) && strcmp(argv[2], "guest") == 0);
     if (server_fd < 0) {
         return -1;
     }

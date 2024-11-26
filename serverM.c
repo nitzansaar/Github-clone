@@ -6,8 +6,10 @@
 #include <sys/socket.h>
 #include <ctype.h>
 #include <time.h>
+#include <sys/select.h>
 
 #define MAIN_TCP_PORT 21690
+#define GUEST_TCP_PORT 21691
 #define SERVER_A_PORT 21693
 #define SERVER_R_PORT 21694
 #define SERVER_D_PORT 21695
@@ -266,25 +268,33 @@ void log_operation(const char* username, const char* operation, const char* deta
 
 int main() {
     int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
+    int tcp_guest_socket = socket(AF_INET, SOCK_STREAM, 0);
     int udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
     
-    if (tcp_socket < 0 || udp_socket < 0) {
+    if (tcp_socket < 0 || udp_socket < 0 || tcp_guest_socket < 0) {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
 
     int reuse = 1;
-    if (setsockopt(tcp_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    if (setsockopt(tcp_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0 ||
+        setsockopt(tcp_guest_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
         perror("setsockopt failed");
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in tcp_addr, server_a_addr, server_r_addr, server_d_addr;
+    struct sockaddr_in tcp_addr, server_a_addr, server_r_addr, server_d_addr, tcp_guest_addr;
     
     memset(&tcp_addr, 0, sizeof(tcp_addr));
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = INADDR_ANY;
     tcp_addr.sin_port = htons(MAIN_TCP_PORT);
+
+    memset(&tcp_guest_addr, 0, sizeof(tcp_guest_addr));
+    tcp_guest_addr.sin_family = AF_INET;
+    tcp_guest_addr.sin_addr.s_addr = INADDR_ANY;
+    tcp_guest_addr.sin_port = htons(GUEST_TCP_PORT);
+
 
     memset(&server_a_addr, 0, sizeof(server_a_addr));
     server_a_addr.sin_family = AF_INET;
@@ -302,26 +312,53 @@ int main() {
     server_d_addr.sin_port = htons(SERVER_D_PORT);
 
     if (bind(tcp_socket, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) < 0) {
-        perror("TCP bind failed");
+        perror("Main TCP bind failed");
         exit(EXIT_FAILURE);
     }
 
-    if (listen(tcp_socket, 5) < 0) {
+    if (bind(tcp_guest_socket, (struct sockaddr*)&tcp_guest_addr, sizeof(tcp_guest_addr)) < 0) {
+        perror("Guest TCP bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(tcp_socket, 5) < 0 || listen(tcp_guest_socket, 5) < 0) {
         perror("TCP listen failed");
         exit(EXIT_FAILURE);
     }
 
-    printf("Server M is up and running using UDP on port %d\n", MAIN_TCP_PORT);
+    printf("Server M is up and running using UDP on port %d and TCP on ports %d, %d\n", 
+           MAIN_TCP_PORT, MAIN_TCP_PORT, GUEST_TCP_PORT);
 
     // Keep track of authenticated sessions
     UserSession current_session = {0};
 
     while (1) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
         char buffer[BUFFER_SIZE];
         
-        int client_socket = accept(tcp_socket, (struct sockaddr*)&client_addr, &client_len);
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(tcp_socket, &readfds);
+        FD_SET(tcp_guest_socket, &readfds);
+        
+        int max_fd = (tcp_socket > tcp_guest_socket) ? tcp_socket : tcp_guest_socket;
+        
+        if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
+            perror("select failed");
+            continue;
+        }
+        
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int client_socket;
+        
+        if (FD_ISSET(tcp_socket, &readfds)) {
+            client_socket = accept(tcp_socket, (struct sockaddr*)&client_addr, &client_len);
+        } else if (FD_ISSET(tcp_guest_socket, &readfds)) {
+            client_socket = accept(tcp_guest_socket, (struct sockaddr*)&client_addr, &client_len);
+        } else {
+            continue;
+        }
+
         if (client_socket < 0) {
             perror("TCP accept failed");
             continue;
@@ -436,6 +473,7 @@ int main() {
     }
 
     close(tcp_socket);
+    close(tcp_guest_socket);
     close(udp_socket);
     return 0;
 }
