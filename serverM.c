@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/select.h>
+#include <pthread.h>
 
 #define MAIN_TCP_PORT 21690
 #define GUEST_TCP_PORT 21691
@@ -24,6 +25,26 @@ typedef struct {
     int is_guest;
     int is_authenticated;
 } UserSession;
+
+typedef struct {
+    int socket;
+    struct sockaddr_in address;
+    UserSession session;
+} ClientConnection;
+
+// Add mutex for thread-safe operations
+pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Add near the top of the file with other global definitions
+typedef struct {
+    int udp_socket;
+    struct sockaddr_in server_a_addr;
+    struct sockaddr_in server_r_addr;
+    struct sockaddr_in server_d_addr;
+} ServerResources;
+
+// Global instance
+ServerResources server_resources;
 
 // Function to handle authentication
 UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr, 
@@ -251,9 +272,12 @@ char* handle_log_command(const UserSession* session) {
 }
 
 void log_operation(const char* username, const char* operation, const char* details) {
+    pthread_mutex_lock(&log_mutex);
+    
     FILE* log_file = fopen("server_logs.txt", "a");
     if (!log_file) {
         perror("Cannot open log file");
+        pthread_mutex_unlock(&log_mutex);
         return;
     }
     
@@ -264,6 +288,83 @@ void log_operation(const char* username, const char* operation, const char* deta
     
     fprintf(log_file, "[%s] %s %s %s\n", timestamp, username, operation, details);
     fclose(log_file);
+    
+    pthread_mutex_unlock(&log_mutex);
+}
+
+void* handle_client(void* arg) {
+    ClientConnection* conn = (ClientConnection*)arg;
+    char buffer[BUFFER_SIZE];
+    
+    while (1) {
+        int bytes_received = recv(conn->socket, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_received <= 0) {
+            break;  // Client disconnected
+        }
+        buffer[bytes_received] = '\0';
+
+        char command[20], arg1[50], arg2[50];
+        sscanf(buffer, "%s %s %s", command, arg1, arg2);
+
+        char* response = NULL;
+
+        if (strcmp(command, "AUTH") == 0) {
+            pthread_mutex_lock(&log_mutex);
+            printf("Server M has received username %s and password %s\n", 
+                   arg1, "********");
+            pthread_mutex_unlock(&log_mutex);
+            
+            conn->session = handle_auth(server_resources.udp_socket, 
+                                      server_resources.server_a_addr, 
+                                      arg1, arg2);
+            
+            if (conn->session.is_guest && conn->session.is_authenticated) {
+                response = "Authentication successful - Welcome guest! Note: Limited access rights applied";
+            } else if (conn->session.is_authenticated) {
+                response = "Authentication successful - Welcome member!";
+            } else {
+                response = "Authentication failed - Invalid credentials";
+            }
+        }
+        else if (strcmp(command, "LOOKUP") == 0) {
+            response = handle_lookup(server_resources.udp_socket, 
+                                   server_resources.server_r_addr,
+                                   arg1, &conn->session);
+        }
+        else if (strcmp(command, "PUSH") == 0) {
+            response = handle_push(server_resources.udp_socket,
+                                 server_resources.server_r_addr,
+                                 conn->session.username, arg1, &conn->session);
+        }
+        else if (strcmp(command, "DEPLOY") == 0) {
+            response = handle_deploy(server_resources.udp_socket,
+                                   server_resources.server_d_addr,
+                                   conn->session.username, &conn->session);
+        }
+        else if (strcmp(command, "REMOVE") == 0) {
+            response = handle_remove(server_resources.udp_socket,
+                                   server_resources.server_r_addr,
+                                   arg1, &conn->session);
+        }
+        else if (strcmp(command, "LOG") == 0) {
+            response = handle_log_command(&conn->session);
+        }
+        else {
+            response = "Invalid command";
+        }
+
+        // Send response back to client
+        if (response) {
+            send(conn->socket, response, strlen(response), 0);
+            pthread_mutex_lock(&log_mutex);
+            printf("The main server has sent the response to client\n");
+            pthread_mutex_unlock(&log_mutex);
+        }
+    }
+
+    close(conn->socket);
+    free(conn);
+    return NULL;
 }
 
 int main() {
@@ -329,12 +430,16 @@ int main() {
     printf("Server M is up and running using UDP on port %d and TCP on ports %d, %d\n", 
            MAIN_TCP_PORT, MAIN_TCP_PORT, GUEST_TCP_PORT);
 
+    // Initialize server resources
+    server_resources.udp_socket = udp_socket;
+    server_resources.server_a_addr = server_a_addr;
+    server_resources.server_r_addr = server_r_addr;
+    server_resources.server_d_addr = server_d_addr;
+
     // Keep track of authenticated sessions
     UserSession current_session = {0};
 
     while (1) {
-        char buffer[BUFFER_SIZE];
-        
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(tcp_socket, &readfds);
@@ -342,134 +447,53 @@ int main() {
         
         int max_fd = (tcp_socket > tcp_guest_socket) ? tcp_socket : tcp_guest_socket;
         
-        if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
+        // Use timeout to make select non-blocking
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000;  // 100ms timeout
+        
+        int activity = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+        if (activity < 0) {
             perror("select failed");
             continue;
         }
         
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int client_socket;
+        if (activity == 0) continue;  // Timeout, no new connections
         
-        if (FD_ISSET(tcp_socket, &readfds)) {
-            client_socket = accept(tcp_socket, (struct sockaddr*)&client_addr, &client_len);
-        } else if (FD_ISSET(tcp_guest_socket, &readfds)) {
-            client_socket = accept(tcp_guest_socket, (struct sockaddr*)&client_addr, &client_len);
-        } else {
-            continue;
-        }
-
-        if (client_socket < 0) {
-            perror("TCP accept failed");
-            continue;
-        }
-
-        // Keep connection alive for this client
-        while (1) {
-            int bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-            if (bytes_received <= 0) {
-                // Client disconnected or error
-                break;
+        if (FD_ISSET(tcp_socket, &readfds) || FD_ISSET(tcp_guest_socket, &readfds)) {
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            int client_socket;
+            
+            if (FD_ISSET(tcp_socket, &readfds)) {
+                client_socket = accept(tcp_socket, (struct sockaddr*)&client_addr, &client_len);
+            } else {
+                client_socket = accept(tcp_guest_socket, (struct sockaddr*)&client_addr, &client_len);
             }
-            buffer[bytes_received] = '\0';
 
-            char command[20], arg1[50], arg2[50];
-            sscanf(buffer, "%s %s %s", command, arg1, arg2);
-
-            if (strcmp(command, "AUTH") == 0) {
-                // Print received credentials (with hidden password)
-                char hidden_password[50];
-                memset(hidden_password, '*', strlen(arg2));
-                hidden_password[strlen(arg2)] = '\0';
-                printf("Server M has received username %s and password %s\n", arg1, hidden_password);
-                
-                // Handle authentication
-                current_session = handle_auth(udp_socket, server_a_addr, arg1, arg2);
-                const char* response;
-                
-                if (current_session.is_guest && current_session.is_authenticated) {
-                    response = "Authentication successful - Welcome guest! Note: Limited access rights applied";
-                } else if (current_session.is_authenticated) {
-                    response = "Authentication successful - Welcome member!";
-                } else {
-                    response = "Authentication failed - Invalid credentials";
-                }
-                
-                send(client_socket, response, strlen(response), 0);
-                printf("The main server has sent the response from server A to client using TCP over port %d\n", MAIN_TCP_PORT);
-                
-            } else if (strcmp(command, "LOOKUP") == 0) {
-                // Print appropriate message based on user type
-                if (current_session.is_guest) {
-                    printf("The main server has received a lookup request from Guest to lookup %s's repository using TCP over port %d.\n", 
-                           arg1, MAIN_TCP_PORT);
-                } else {
-                    printf("The main server has received a lookup request from %s to lookup %s's repository using TCP over port %d.\n", 
-                           current_session.username, arg1, MAIN_TCP_PORT);
-                }
-                
-                // Handle lookup request with current session
-                char* lookup_response = handle_lookup(udp_socket, server_r_addr, arg1, &current_session);
-                send(client_socket, lookup_response, strlen(lookup_response), 0);
-                printf("The main server has sent the response to the client.\n");
-            } else if (strcmp(command, "PUSH") == 0) {
-                // Print received push request message
-                printf("The main server has received a push request from %s, using TCP over port %d.\n", 
-                       current_session.username, MAIN_TCP_PORT);
-                
-                // Handle push request with current session
-                char* push_response = handle_push(udp_socket, server_r_addr, arg1, arg2, &current_session);
-                send(client_socket, push_response, strlen(push_response), 0);
-                
-                // For non-overwrite responses
-                if (strstr(push_response, "File exists") == NULL) {
-                    printf("The main server has sent the response to the client.\n");
-                } else {
-                    // For overwrite confirmation requests
-                    printf("The main server has sent the overwrite confirmation request to the client.\n");
-                    
-                    bytes_received = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
-                    if (bytes_received > 0) {
-                        buffer[bytes_received] = '\0';
-                        
-                        printf("The main server has received the overwrite confirmation response from %s using TCP over port %d\n", 
-                               current_session.username, MAIN_TCP_PORT);
-                        
-                        // Forward overwrite response to Server R
-                        if (sendto(udp_socket, buffer, strlen(buffer), 0, 
-                                  (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
-                            send(client_socket, "Error: Failed to process overwrite response", 42, 0);
-                            continue;
-                        }
-                        printf("The main server has sent the overwrite confirmation response to server R.\n");
-                        
-                        // Get final response from Server R
-                        socklen_t server_len = sizeof(server_r_addr);
-                        int response_len = recvfrom(udp_socket, buffer, BUFFER_SIZE - 1, 0,
-                                              (struct sockaddr*)&server_r_addr, &server_len);
-                        if (response_len > 0) {
-                            buffer[response_len] = '\0';
-                            printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
-                            send(client_socket, buffer, strlen(buffer), 0);
-                            printf("The main server has sent the response to the client.\n");
-                        }
-                    }
-                }
-            } else if (strcmp(command, "DEPLOY") == 0) {
-                // Handle deploy request with current session
-                char* deploy_response = handle_deploy(udp_socket, server_d_addr, arg1, &current_session);
-                send(client_socket, deploy_response, strlen(deploy_response), 0);
-            } else if (strcmp(command, "REMOVE") == 0) {
-                // Handle remove request with current session
-                char* remove_response = handle_remove(udp_socket, server_r_addr, arg1, &current_session);
-                send(client_socket, remove_response, strlen(remove_response), 0);
-            } else if (strcmp(command, "LOG") == 0) {
-                char* log_response = handle_log_command(&current_session);
-                send(client_socket, log_response, strlen(log_response), 0);
+            if (client_socket < 0) {
+                perror("TCP accept failed");
+                continue;
             }
-        }
 
-        close(client_socket);  // Only close when client disconnects
+            // Create new client connection
+            ClientConnection* conn = malloc(sizeof(ClientConnection));
+            conn->socket = client_socket;
+            conn->address = client_addr;
+            memset(&conn->session, 0, sizeof(UserSession));
+
+            // Create thread to handle this client
+            pthread_t thread_id;
+            if (pthread_create(&thread_id, NULL, handle_client, (void*)conn) != 0) {
+                perror("Failed to create thread");
+                close(client_socket);
+                free(conn);
+                continue;
+            }
+            
+            // Detach thread to automatically clean up when it exits
+            pthread_detach(thread_id);
+        }
     }
 
     close(tcp_socket);
