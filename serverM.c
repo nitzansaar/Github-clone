@@ -16,6 +16,8 @@
 #define SERVER_D_PORT 21695
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 100
+#define PURPLE "\033[35m"
+#define RESET "\033[0m"
 
 // Add this prototype near the top of the file, with other function prototypes
 void log_operation(const char* username, const char* operation, const char* details);
@@ -133,9 +135,16 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     static char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
 
+    // Initial push request received
+    printf("The main server has received a push request from %s, using TCP over port %d.\n", 
+           username, MAIN_TCP_PORT);
+
     if (!session->is_authenticated || session->is_guest) {
         return "Error: Only authenticated members can push files";
     }
+    
+    // Before sending to Server R
+    printf("The main server has sent the push request to server R.\n");
     
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
@@ -144,28 +153,34 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
                (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
         return "Error: Failed to send push request";
     }
-    printf("The main server has sent the push request to server R.\n");
-    
+
     // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
     int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
                                (struct sockaddr*)&server_r_addr, &server_len);
-    if (response_len < 0) {
-        return "Error: Failed to receive push response";
-    }
     
-    response[response_len] = '\0';
-    
-    // Print appropriate message based on response type
-    if (strstr(response, "File exists") != NULL) {
-        printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", MAIN_TCP_PORT);
+    // After receiving response from Server R
+    if (strstr(response, "overwrite") != NULL) {
+        printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", 
+               MAIN_TCP_PORT);
+        
+        // Before sending overwrite confirmation request to client
+        printf("The main server has sent the overwrite confirmation request to the client.\n");
+        
+        // After receiving overwrite confirmation from client
+        printf("The main server has received the overwrite confirmation response from %s using TCP over port %d\n", 
+               username, MAIN_TCP_PORT);
+        
+        // After sending overwrite confirmation to Server R
+        printf("The main server has sent the overwrite confirmation response to server R.\n");
     } else {
-        printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
+        printf("The main server has received the response from server R using UDP over %d\n", 
+               MAIN_TCP_PORT);
     }
-    
-    if (strstr(response, "successfully") != NULL) {
-        log_operation(session->username, "PUSH", filename);
-    }
+
+    // Before sending final response to client
+    printf("The main server has sent the response to the client.\n");
+
     return response;
 }
 
@@ -235,13 +250,12 @@ char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr,
     return response;
 }
 
-char* handle_log_command(const UserSession* session) {
-    static char response[BUFFER_SIZE * 10];  // Larger buffer for log history
+char* handle_log(const UserSession* session) {
+    static char response[BUFFER_SIZE];
     
-    // Check if user is authenticated and is not a guest
-    if (!session->is_authenticated || session->is_guest) {
-        return "Error: Only authenticated members can view logs";
-    }
+    // When receiving log request
+    printf("%sThe main server has received a log request from member %s TCP over port %d.%s\n",
+           PURPLE, session->username, MAIN_TCP_PORT, RESET);
     
     FILE* log_file = fopen("server_logs.txt", "r");
     if (!log_file) {
@@ -249,7 +263,7 @@ char* handle_log_command(const UserSession* session) {
     }
     
     // Initialize response with header
-    snprintf(response, BUFFER_SIZE * 10, "Operation history for user %s:\n", session->username);
+    snprintf(response, BUFFER_SIZE, "Operation history for user %s:\n", session->username);
     
     char line[BUFFER_SIZE];
     // Skip header if present
@@ -268,6 +282,11 @@ char* handle_log_command(const UserSession* session) {
     }
     
     fclose(log_file);
+    
+    // Before sending response back to client
+    printf("%sThe main server has sent the log response to the client.%s\n",
+           PURPLE, RESET);
+    
     return response;
 }
 
@@ -337,17 +356,40 @@ void* handle_client(void* arg) {
                                  conn->session.username, arg1, &conn->session);
         }
         else if (strcmp(command, "DEPLOY") == 0) {
+            printf("The main server has received a deploy request from member %s TCP over port %d.\n",
+                   conn->session.username, MAIN_TCP_PORT);
+               
+            // After sending request to server R
+            printf("The main server has sent the lookup request to server R.\n");
+            
+            // After receiving response from server R
+            printf("The main server received the lookup response from server R.\n");
+            
+            // Before sending request to server D
+            printf("The main server has sent the deploy request to server D.\n");
+            
             response = handle_deploy(server_resources.udp_socket,
                                    server_resources.server_d_addr,
                                    conn->session.username, &conn->session);
+                               
+            // After receiving success response
+            if (strstr(response, "successful") != NULL) {
+                printf("The user %s's repository has been deployed at server D.\n", 
+                       conn->session.username);
+            }
         }
         else if (strcmp(command, "REMOVE") == 0) {
+            printf("The main server has received a remove request from member %s TCP over port %d.\n", 
+                   conn->session.username, MAIN_TCP_PORT);
+            
             response = handle_remove(server_resources.udp_socket,
                                    server_resources.server_r_addr,
                                    arg1, &conn->session);
+                               
+            printf("The main server has received confirmation of the remove request done by the server R\n");
         }
         else if (strcmp(command, "LOG") == 0) {
-            response = handle_log_command(&conn->session);
+            response = handle_log(&conn->session);
         }
         else {
             response = "Invalid command";
