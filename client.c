@@ -7,8 +7,7 @@
 #include <sys/socket.h>     
 #include <ctype.h> 
 #include <stdbool.h>
-#define PORT 21690
-#define GUEST_PORT 21691
+
 
 #define PURPLE "\033[35m"
 #define RESET "\033[0m"
@@ -115,9 +114,9 @@ int setup_connection(struct sockaddr_in* server_address, bool is_guest) {
 
     server_address->sin_family = AF_INET;
     if (is_guest) {
-        server_address->sin_port = htons(GUEST_PORT);
+        server_address->sin_port = htons(25694);
     } else {
-        server_address->sin_port = htons(PORT);
+        server_address->sin_port = htons(25693);
     }
     server_address->sin_addr.s_addr = inet_addr("127.0.0.1");
 

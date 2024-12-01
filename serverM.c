@@ -9,11 +9,11 @@
 #include <sys/select.h>
 #include <pthread.h>
 
-#define MAIN_TCP_PORT 21690
-#define GUEST_TCP_PORT 21691
+#define MAIN_TCP_PORT 25693
+#define GUEST_TCP_PORT 25694
 #define SERVER_A_PORT 21693
-#define SERVER_R_PORT 21694
-#define SERVER_D_PORT 21695
+#define SERVER_R_PORT 22693
+#define SERVER_D_PORT 23693
 #define BUFFER_SIZE 1024
 #define MAX_SESSIONS 100
 #define PURPLE "\033[35m"

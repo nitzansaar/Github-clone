@@ -8,7 +8,7 @@
 #include <ctype.h>
 #include <errno.h>  
 
-#define PORT 21693 // last 3 digits of my student id are '693'
+#define PORT 21693    // Changed from 21000
 void decrypt(char* encrypted, char* decrypted);
 int authenticate(char *username, char *password);
 const char* check_credentials(char* username, char* password);

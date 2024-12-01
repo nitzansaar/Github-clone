@@ -6,8 +6,8 @@
 #include <sys/socket.h>
 #include <time.h>
 
-#define SERVER_D_PORT 21695
-#define SERVER_R_PORT 21694
+#define SERVER_D_PORT 23693
+#define SERVER_R_PORT 22693
 #define BUFFER_SIZE 1024
 
 // Function to get files from Server R for a specific user
