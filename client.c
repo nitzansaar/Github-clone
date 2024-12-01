@@ -97,9 +97,11 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
     printf("The client received the response from the main server using TCP over port %d.\n", 
            client_port);
 
-    // Remove the previous error checking and simplify the response handling
-    if (strstr(buffer, "does not exist") != NULL) {
-        printf("%s does not exist. Please try again.\n", lookup_username);
+    // Check if the username does not exist first
+    if (strstr(buffer, "does not exist") != NULL || strstr(buffer, "not found") != NULL) {
+        printf("Error: Username '%s' does not exist.\n", lookup_username);
+    } else if (strstr(buffer, "No files found") != NULL) {
+        printf("Files for user %s:\nNo files found.\n", lookup_username);
     } else {
         // Print the server's response directly
         printf("%s", buffer);

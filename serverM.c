@@ -88,6 +88,32 @@ UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr,
     return session;
 }
 
+// Function to check if username exists in members.txt
+int user_exists(const char* username) {
+    FILE* file = fopen("members.txt", "r");
+    if (!file) {
+        perror("Cannot open members.txt");
+        return 0;
+    }
+
+    char line[1024];
+    char file_username[50];
+    
+    // Skip header line
+    fgets(line, sizeof(line), file);
+    
+    while (fgets(line, sizeof(line), file)) {
+        sscanf(line, "%s", file_username);
+        if (strcmp(file_username, username) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+    
+    fclose(file);
+    return 0;
+}
+
 // Function to handle lookup requests
 char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr, 
                    const char* target_username, const UserSession* session) {
@@ -97,6 +123,12 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     // First check if user is authenticated
     if (!session->is_authenticated) {
         return "Error: Please authenticate first";
+    }
+    
+    // Check if target username exists in members.txt
+    if (!user_exists(target_username)) {
+        snprintf(response, BUFFER_SIZE, "Error: Username '%s' does not exist", target_username);
+        return response;
     }
     
     // Send lookup request to Server R
@@ -122,9 +154,7 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     response[response_len] = '\0';
     
     // Log successful lookup operation
-    if (strstr(response, "Error") == NULL) {
-        log_operation(session->username, "LOOKUP", target_username);
-    }
+    log_operation(session->username, "LOOKUP", target_username);
     
     return response;
 }
