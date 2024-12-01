@@ -55,13 +55,13 @@ UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr,
     char buffer[BUFFER_SIZE];
     snprintf(buffer, BUFFER_SIZE, "%s %s", username, password);
     
+    printf("Server M has sent authentication request to Server A\n");
+    
     if (sendto(udp_socket, buffer, strlen(buffer), 0, 
                (struct sockaddr*)&server_a_addr, sizeof(server_a_addr)) < 0) {
         perror("Failed to send credentials to serverA");
         return session;
     }
-    
-    printf("Server M has sent authentication request to Server A\n");
     
     socklen_t server_len = sizeof(server_a_addr);
     int response_len = recvfrom(udp_socket, buffer, BUFFER_SIZE - 1, 0,
@@ -156,6 +156,8 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     // Log successful lookup operation
     log_operation(session->username, "LOOKUP", target_username);
     
+    printf("The main server has sent the response to the client.\n");
+    
     return response;
 }
 
@@ -173,9 +175,6 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
         return "Error: Only authenticated members can push files";
     }
     
-    // Before sending to Server R
-    printf("The main server has sent the push request to server R.\n");
-    
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
     
@@ -184,17 +183,24 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
         return "Error: Failed to send push request";
     }
 
+    printf("The main server has sent the push request to server R.\n");
+
     // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
     int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
                                (struct sockaddr*)&server_r_addr, &server_len);
     
-    // After receiving response from Server R
+    if (response_len < 0) {
+        return "Error: Failed to receive push response";
+    }
+
+    response[response_len] = '\0';
+
     if (strstr(response, "overwrite") != NULL) {
         printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", 
                MAIN_TCP_PORT);
         
-        // Before sending overwrite confirmation request to client
+        // Send overwrite confirmation request to client
         printf("The main server has sent the overwrite confirmation request to the client.\n");
         
         // After receiving overwrite confirmation from client
@@ -359,8 +365,7 @@ void* handle_client(void* arg) {
 
         if (strcmp(command, "AUTH") == 0) {
             pthread_mutex_lock(&log_mutex);
-            printf("Server M has received username %s and password %s\n", 
-                   arg1, "********");
+            printf("Server M has received username %s and password ****\n", arg1);
             pthread_mutex_unlock(&log_mutex);
             
             conn->session = handle_auth(server_resources.udp_socket, 
@@ -377,11 +382,20 @@ void* handle_client(void* arg) {
             }
         }
         else if (strcmp(command, "LOOKUP") == 0) {
+            if (conn->session.is_guest) {
+                printf("The main server has received a lookup request from Guest to lookup %s’s repository using TCP over port %d.\n", arg1, MAIN_TCP_PORT);
+            } else {
+                printf("The main server has received a lookup request from %s to lookup %s’s repository using TCP over port %d.\n", conn->session.username, arg1, MAIN_TCP_PORT);
+            }
+
             response = handle_lookup(server_resources.udp_socket, 
                                    server_resources.server_r_addr,
                                    arg1, &conn->session);
         }
         else if (strcmp(command, "PUSH") == 0) {
+            printf("The main server has received a push request from %s, using TCP over port %d.\n", 
+                   conn->session.username, MAIN_TCP_PORT);
+
             response = handle_push(server_resources.udp_socket,
                                  server_resources.server_r_addr,
                                  conn->session.username, arg1, &conn->session);
@@ -389,20 +403,20 @@ void* handle_client(void* arg) {
         else if (strcmp(command, "DEPLOY") == 0) {
             printf("The main server has received a deploy request from member %s TCP over port %d.\n",
                    conn->session.username, MAIN_TCP_PORT);
-               
-            // After sending request to server R
+            
+            // Forward lookup request to server R
             printf("The main server has sent the lookup request to server R.\n");
             
-            // After receiving response from server R
+            // Simulate receiving response from server R
             printf("The main server received the lookup response from server R.\n");
             
-            // Before sending request to server D
+            // Send deploy request to server D
             printf("The main server has sent the deploy request to server D.\n");
             
             response = handle_deploy(server_resources.udp_socket,
                                    server_resources.server_d_addr,
                                    conn->session.username, &conn->session);
-                               
+            
             // After receiving success response
             if (strstr(response, "successful") != NULL) {
                 printf("The user %s's repository has been deployed at server D.\n", 
@@ -430,7 +444,7 @@ void* handle_client(void* arg) {
         if (response) {
             send(conn->socket, response, strlen(response), 0);
             pthread_mutex_lock(&log_mutex);
-            printf("The main server has sent the response to client\n");
+            printf("The main server has sent the response to the client using TCP over port %d.\n", MAIN_TCP_PORT);
             pthread_mutex_unlock(&log_mutex);
         }
     }

@@ -164,15 +164,21 @@ int main() {
         char request_type[20], username[50], requesting_user[50];
         sscanf(buffer, "%s %s %s", request_type, username, requesting_user);
         
-        printf("Server R received lookup request for user: %s from user: %s\n", 
-               username, requesting_user);
-
-        if (strcmp(request_type, "PUSH") == 0) {
+        if (strcmp(request_type, "LOOKUP") == 0) {
+            printf("Server R has received a lookup request from the main server.\n");
+            char* files_list = get_user_files(username);
+            
+            sendto(server_fd, files_list, strlen(files_list), 0,
+                   (struct sockaddr *)&address, addrlen);
+            
+            printf("Server R has finished sending the response to the main server.\n");
+        } else if (strcmp(request_type, "PUSH") == 0) {
             char filename[50];
             sscanf(buffer, "PUSH %s %s", username, filename);
-            printf("Server R received push request - User: %s, File: %s\n", username, filename);
+            printf("Server R has received a push request from the main server.\n");
 
             if (file_exists(username, filename)) {
+                printf("%s exists in %s's repository; requesting overwrite confirmation.\n", filename, username);
                 sprintf(buffer, "File exists. Do you want to overwrite?");
                 sendto(server_fd, buffer, strlen(buffer), 0,
                        (struct sockaddr *)&address, addrlen);
@@ -188,17 +194,19 @@ int main() {
                 if (strcmp(decision, "Y") == 0) {
                     // Remove the existing file entry
                     if (remove_file_entry(username, filename)) {
-                        printf("Server R: Removed existing file entry - User: %s, File: %s\n", username, filename);
+                        printf("User requested overwrite; overwrite successful.\n");
                     }
                     // Add new file entry
                     add_file_entry(username, filename);
                     sprintf(buffer, "File overwritten successfully");
                 } else {
+                    printf("Overwrite denied\n");
                     sprintf(buffer, "Push cancelled");
                 }
             } else {
                 // Add new file entry to filenames.txt
                 add_file_entry(username, filename);
+                printf("%s uploaded successfully.\n", filename);
                 sprintf(buffer, "File pushed successfully");
             }
             
@@ -207,7 +215,7 @@ int main() {
         } else if (strcmp(request_type, "REMOVE") == 0) {
             char filename[50];
             sscanf(buffer, "REMOVE %s %s", username, filename);
-            printf("Server R received remove request - User: %s, File: %s\n", username, filename);
+            printf("Server R has received a remove request from the main server.\n");
 
             if (remove_file_entry(username, filename)) {
                 sprintf(buffer, "File removed successfully");
@@ -217,14 +225,13 @@ int main() {
             
             sendto(server_fd, buffer, strlen(buffer), 0,
                    (struct sockaddr *)&address, addrlen);
-        } else {
-            char* files_list = get_user_files(username);
-            printf("DEBUG - Sending response:\n%s\n", files_list);
-            
-            sendto(server_fd, files_list, strlen(files_list), 0,
+        } else if (strcmp(request_type, "DEPLOY") == 0) {
+            printf("Server R has received a deploy request from the main server.\n");
+            // Simulate sending response
+            sprintf(buffer, "Deployment list for %s", username);
+            sendto(server_fd, buffer, strlen(buffer), 0,
                    (struct sockaddr *)&address, addrlen);
-            
-            printf("Server R sent file list back to Main Server\n");
+            printf("Server R has finished sending the response to the main server.\n");
         }
     }
 
