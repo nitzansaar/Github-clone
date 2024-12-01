@@ -149,7 +149,7 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
         return "Error: Failed to receive lookup response";
     }
     
-    printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
+    // printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
     
     response[response_len] = '\0';
     
@@ -168,8 +168,8 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     char buffer[BUFFER_SIZE];
 
     // Upon receiving push request from client
-    printf("The main server has received a push request from %s, using TCP over port %d.\n", 
-           username, MAIN_TCP_PORT);
+    // printf("The main server has received a push request from %s, using TCP over port %d.\n", 
+    //        username, MAIN_TCP_PORT);
 
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
@@ -381,7 +381,7 @@ void* handle_client(void* arg) {
 
         if (strcmp(command, "AUTH") == 0) {
             pthread_mutex_lock(&log_mutex);
-            printf("Server M has received username %s and password ****\n", arg1);
+            printf("Server M has received username %s and password ****.\n", arg1);
             pthread_mutex_unlock(&log_mutex);
             
             conn->session = handle_auth(server_resources.udp_socket, 
@@ -434,10 +434,10 @@ void* handle_client(void* arg) {
                                    conn->session.username, &conn->session);
             
             // After receiving success response
-            if (strstr(response, "successful") != NULL) {
-                printf("The user %s's repository has been deployed at server D.\n", 
-                       conn->session.username);
-            }
+            // if (strstr(response, "successful") != NULL) {
+            //     printf("The user %s's repository has been deployed at server D.\n", 
+            //            conn->session.username);
+            // }
         }
         else if (strcmp(command, "REMOVE") == 0) {
             printf("The main server has received a remove request from member %s TCP over port %d.\n", 
