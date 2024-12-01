@@ -6,3 +6,8 @@
 [Thu Nov 21 17:28:59 2024] GraceSmith845 PUSH test.txt
 [Thu Nov 21 17:29:06 2024] GraceSmith845 LOOKUP GraceSmith845
 [Thu Nov 21 17:29:10 2024] GraceSmith845 REMOVE test.txt
+[Sun Dec  1 12:44:12 2024] BobMartinez239 LOOKUP BobMartinez239
+[Sun Dec  1 12:44:45 2024] BobMartinez239 LOOKUP BobMartinez239
+[Sun Dec  1 12:44:58 2024] BobMartinez239 DEPLOY all files
+[Sun Dec  1 12:45:16 2024] BobMartinez239 REMOVE file.txt
+[Sun Dec  1 12:45:20 2024] BobMartinez239 LOOKUP BobMartinez239

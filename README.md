@@ -1,99 +1,126 @@
-# Distributed File Management System
+# EE450 Socket Programming Project
 
-A distributed system that enables file management across multiple servers with authentication, file operations, and deployment capabilities.
+## Personal Information
+- **Full Name:** Nitzan Saar
+- **Student ID:** 8106373693
 
-## System Architecture
+## Project Overview
+I have completed the main requirements of the project, including extra credit, which includes:
+- Implementation of a distributed file management system with authentication
+- Support for both member and guest access
+- File operations (lookup, push, remove)
+- Deployment functionality
+- Operation logging
 
-The system consists of multiple interconnected servers:
-- **Main Server (ServerM)**: Central coordinator handling client requests and routing
-- **Authentication Server (ServerA)**: Manages user authentication
-- **Repository Server (ServerR)**: Handles file storage and management
-- **Deployment Server (ServerD)**: Manages file deployment operations
+## Code Files
+1. **serverM.c**
+   - Main server coordinating all operations
+   - Handles client connections and routes requests
+   - Manages communication with other servers
 
-## Features
+2. **serverA.c**
+   - Authentication server
+   - Handles user credential verification
+   - Manages encrypted password storage
 
-- User Authentication (Member and Guest access)
-- File Operations:
-  - Lookup: View files associated with users
-  - Push: Add new files to the repository
-  - Deploy: Deploy files to production
-  - Remove: Delete files from the repository
-- Operation Logging
-- File Overwrite Protection
-- Encrypted Password Storage
+3. **serverR.c**
+   - Repository server
+   - Manages file storage and operations
+   - Handles file lookup, push, and remove requests
 
-## Technical Details
+4. **serverD.c**
+   - Deployment server
+   - Manages file deployment operations
+   - Maintains deployment logs
 
-- Written in C
-- Uses UDP for inter-server communication
-- Uses TCP for client-server communication
-- Implements socket programming
-- File-based storage for user data and files
+5. **client.c**
+   - Client application
+   - Handles user interaction
+   - Manages connection with main server
+
+## Message Formats
+
+### Authentication Messages
+- Client → ServerM: `AUTH username password`
+- ServerM → ServerA: `username password`
+- ServerA → ServerM: `[MEMBER_AUTH_SUCCESS|GUEST_AUTH_SUCCESS|AUTH_FAILED]`
+
+### File Operation Messages
+1. **Lookup**
+   - Client → ServerM: `LOOKUP username`
+   - ServerM → ServerR: `LOOKUP username requesting_user`
+   - ServerR → ServerM: `[file list or error message]`
+
+2. **Push**
+   - Client → ServerM: `PUSH filename`
+   - ServerM → ServerR: `PUSH username filename`
+   - ServerR → ServerM: `[success message or OVERWRITE_CONFIRM]`
+
+3. **Deploy**
+   - Client → ServerM: `DEPLOY`
+   - ServerM → ServerD: `DEPLOY username`
+   - ServerD → ServerM: `[deployment status message]`
+
+4. **Remove**
+   - Client → ServerM: `REMOVE filename`
+   - ServerM → ServerR: `REMOVE username filename`
+   - ServerR → ServerM: `[success or error message]`
+
+5. **Log**
+   - Client → ServerM: `LOG`
+   - ServerM → Client: `[operation history]`
+
+## Project Limitations and Idiosyncrasies
+1. The system assumes all servers are running on localhost (127.0.0.1)
+2. File operations are limited to text files
+3. The system may fail under the following conditions:
+   - If any server is not running when needed
+   - If the network connection is unstable
+   - If file permissions are not properly set
+   - If the system runs out of memory
+
+## Reused Code
+No code was reused from external sources. All code was written from scratch for this project, with reference to standard socket programming documentation and course materials.
+
+## System Requirements
+- Ubuntu 20.04 LTS
+- C compiler (clang)
+- Standard C libraries
+- Network connectivity for localhost communication
 
 ## Building and Running
+The project includes a Makefile for easy compilation and management:
 
-1. Compile all servers and client:
-clang -o serverM serverM.c
-clang -o serverA serverA.c
-clang -o serverR serverR.c
-clang -o serverD serverD.c
-clang -o client client.c
+### Makefile Commands
+- `make all`: Compiles all servers and client
+- `make serverM`: Compiles only the main server
+- `make serverA`: Compiles only the authentication server
+- `make serverR`: Compiles only the repository server
+- `make serverD`: Compiles only the deployment server
+- `make client`: Compiles only the client application
+- `make clean`: Removes all compiled executables
+- `make kill`: Terminates all running server processes (requires sudo)
 
+### Running the System
+1. Compile all components:
+   ```bash
+   make all
+   ```
 
-2. Start the servers in order:
-./serverM
-./serverA
-./serverR
-./serverD
+2. Start the servers in separate terminals in this order:
+   ```bash
+   ./serverM
+   ./serverA
+   ./serverR
+   ./serverD
+   ```
 
 3. Run the client:
-./client <username> <password>
-
-
-## Available Commands
-
-After authentication, users can use the following commands:
-- `lookup <username>`: View files associated with a user
-- `push <filename>`: Add a new file to the repository
-- `deploy`: Deploy all files to production
-- `remove <filename>`: Remove a file from the repository
-- `log`: View operation history
-
-## What I Learned
-
-1. **Distributed Systems Architecture**
-   - Understanding how multiple servers can work together
-   - Handling inter-process communication
-   - Managing distributed state
-
-2. **Network Programming**
-   - TCP vs UDP implementation differences
-   - Socket programming in C
-   - Network error handling
-   - Protocol design for client-server communication
-
-3. **Security Concepts**
-   - User authentication systems
-   - Password encryption/decryption
-   - Session management
-   - Access control (guest vs member permissions)
-
-4. **System Design**
-   - Separation of concerns across servers
-   - Stateful vs stateless operations
-   - Error handling across distributed systems
-   - Logging and monitoring
-
-5. **C Programming**
-   - File I/O operations
-   - String manipulation
-   - Memory management
-   - Struct usage for data organization
-   - Socket API implementation
-
-6. **Software Engineering Practices**
-   - Code organization
-   - Error handling patterns
-   - Logging implementation
-   - Protocol design
+   ```bash
+   ./client username password
+   ```
+   Or for guest access:
+   ```bash
+   ./client guest guest
+   ```
 
