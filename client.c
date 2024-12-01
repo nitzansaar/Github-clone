@@ -47,6 +47,7 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
     // If no username specified and user is a member (not guest), use authenticated username
     if (parsed == 1 && !is_guest) {
         lookup_username = authenticated_user;
+        printf("Username is not specified. Will lookup %s\n", authenticated_user);
     } else if (parsed != 2) {
         if (is_guest) {
             printf("Error: Username is required. Please specify a username to lookup.\n---Start a new request---\n");
@@ -94,9 +95,9 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
 
     // Check if the username does not exist first
     if (strstr(buffer, "does not exist") != NULL || strstr(buffer, "not found") != NULL) {
-        printf("Error: Username '%s' does not exist.\n", lookup_username);
+        printf("%s does not exist. Please try again.\n", lookup_username);
     } else if (strstr(buffer, "No files found") != NULL) {
-        printf("Files for user %s:\nNo files found.\n", lookup_username);
+        printf("Empty repository.\n");
     } else {
         // Print the server's response directly
         printf("%s", buffer);
@@ -297,6 +298,7 @@ void handle_remove_command(int server_fd, const char* filename, int parsed) {
     // Check if command format is correct
     if (parsed != 2) {
         printf("Invalid remove command format. Use: remove <filename>\n");
+        printf("----Start a new request----\n");
         return;
     }
     
@@ -306,6 +308,7 @@ void handle_remove_command(int server_fd, const char* filename, int parsed) {
     // Send remove request
     if (send(server_fd, remove_msg, strlen(remove_msg), 0) < 0) {
         perror("Error sending remove request");
+        printf("----Start a new request----\n");
         return;
     }
     
@@ -316,16 +319,31 @@ void handle_remove_command(int server_fd, const char* filename, int parsed) {
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
     if (len < 0) {
         perror("Error receiving remove response");
+        printf("----Start a new request----\n");
         return;
     }
     buffer[len] = '\0';
     
+    // Get the client's port number
+    struct sockaddr_in local_addr;
+    socklen_t addr_len = sizeof(local_addr);
+    getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
+    int client_port = ntohs(local_addr.sin_port);
+    
+    // Print response header
+    printf("The client received the response from the main server using TCP over port %d.\n", 
+           client_port);
+    
     // Print result
     if (strstr(buffer, "successfully") != NULL) {
         printf("The remove request was successful.\n");
+    } else if (strstr(buffer, "not found") != NULL) {
+        printf("The file %s does not exist in your repository.\n", filename);
     } else {
         printf("The remove request was not successful.\n");
     }
+    
+    printf("----Start a new request----\n");
 }
 
 void handle_log_command(int server_fd) {

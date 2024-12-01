@@ -21,7 +21,7 @@ char* get_user_files(const char* username) {
     int file_count = 0;
     
     // Initialize result
-    snprintf(result, BUFFER_SIZE, "Files for user %s:\n", username);
+    // snprintf(result, BUFFER_SIZE, "Files for user %s:\n", username);
     
     // Skip the header line
     fgets(line, sizeof(line), file);
