@@ -44,7 +44,7 @@ int main() {
 
         char username[50], password[50];
         sscanf(buffer, "%s %s", username, password);
-        printf("ServerA received username %s and password %s\n", username, password);
+        printf("ServerA received username %s and password ******\n", username);
 
         // Get authentication response with user type
         const char* response = check_credentials(username, password);
@@ -73,7 +73,6 @@ const char* check_credentials(char* username, char* password) {
 }
 
 void decrypt(char* encrypted, char* decrypted) {
-    printf("decrypting %s %s", encrypted, decrypted);
     int i = 0;
     while (encrypted[i] != '\0') {
         if (isalpha(encrypted[i])) {
@@ -96,7 +95,6 @@ void decrypt(char* encrypted, char* decrypted) {
 }
 
 int authenticate(char *username, char *password) {
-    printf("Debug: Starting authentication for user: %s\n", username);
     
     FILE *encrypted_file = fopen("members.txt", "r");
     FILE *original_file = fopen("original.txt", "r");
@@ -125,8 +123,6 @@ int authenticate(char *username, char *password) {
         sscanf(encrypted_line, "%s %s", encrypted_username, encrypted_password);
         sscanf(original_line, "%s %s", original_username, original_password);
         
-        printf("Debug: Comparing with entry - encrypted: %s, original: %s\n", 
-               encrypted_username, original_username);
         
         // Check if this is the user we're looking for
         if (strcmp(username, encrypted_username) == 0) {
@@ -134,15 +130,10 @@ int authenticate(char *username, char *password) {
             char decrypted_password[50];
             decrypt(encrypted_password, decrypted_password);
             
-            printf("Debug: Found matching username\n");
-            printf("Debug: Encrypted password: %s\n", encrypted_password);
-            printf("Debug: Decrypted password: %s\n", decrypted_password);
-            printf("Debug: Original password: %s\n", original_password);
-            printf("Debug: Provided password: %s\n", password);
             
             // Compare with provided password
             if (strcmp(password, original_password) == 0) {
-                printf("MEMBER %s has been authenticated\n", username);
+                printf("Member %s has been authenticated\n", username);
                 fclose(encrypted_file);
                 fclose(original_file);
                 return 1; // success

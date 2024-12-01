@@ -500,8 +500,8 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    printf("Server M is up and running using UDP on port %d and TCP on ports %d, %d\n", 
-           MAIN_TCP_PORT, MAIN_TCP_PORT, GUEST_TCP_PORT);
+    printf("Server M is up and running using UDP on port %d.\n", 
+           MAIN_TCP_PORT);
 
     // Initialize server resources
     server_resources.udp_socket = udp_socket;

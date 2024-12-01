@@ -203,6 +203,9 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
         return;
     }
 
+    // Clear buffer before receiving
+    memset(buffer, 0, sizeof(buffer));
+
     // Receive initial response
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
     if (len < 0) {
@@ -223,8 +226,15 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
         // Send overwrite response
         send(server_fd, answer, strlen(answer), 0);
         
+        // Clear buffer before receiving final response
+        memset(buffer, 0, sizeof(buffer));
+        
         // Get final response
         len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
+        if (len < 0) {
+            perror("Error receiving final response");
+            return;
+        }
         buffer[len] = '\0';
     }
     
@@ -234,6 +244,8 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
     } else {
         printf("%s was not pushed successfully.\n", filename);
     }
+
+    printf("----Start a new request----\n");
 }
 
 void handle_deploy_command(int server_fd) {

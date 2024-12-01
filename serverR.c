@@ -186,7 +186,12 @@ int main() {
                 sscanf(buffer, "%s %s", response_type, decision);
                 
                 if (strcmp(decision, "Y") == 0) {
-                    // File already exists, no need to add new entry
+                    // Remove the existing file entry
+                    if (remove_file_entry(username, filename)) {
+                        printf("Server R: Removed existing file entry - User: %s, File: %s\n", username, filename);
+                    }
+                    // Add new file entry
+                    add_file_entry(username, filename);
                     sprintf(buffer, "File overwritten successfully");
                 } else {
                     sprintf(buffer, "Push cancelled");
