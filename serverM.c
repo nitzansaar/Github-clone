@@ -305,19 +305,34 @@ char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr,
 char* handle_log(const UserSession* session) {
     static char response[BUFFER_SIZE];
     
+    // Check if user is authenticated and not a guest
+    if (!session->is_authenticated || session->is_guest) {
+        return "Error: Only authenticated members can view logs";
+    }
+    
     // When receiving log request
     printf("%sThe main server has received a log request from member %s TCP over port %d.%s\n",
            PURPLE, session->username, MAIN_TCP_PORT, RESET);
     
-    FILE* log_file = fopen("server_logs.txt", "r");
-    if (!log_file) {
-        return "Error: Could not access log history";
-    }
-    
-    // Initialize response with header
+    // Initialize response buffer
+    memset(response, 0, BUFFER_SIZE);
     snprintf(response, BUFFER_SIZE, "Operation history for user %s:\n", session->username);
     
+    FILE* log_file = fopen("server_logs.txt", "r");
+    if (!log_file) {
+        // If file doesn't exist, create it
+        log_file = fopen("server_logs.txt", "w+");
+        if (!log_file) {
+            return "Error: Could not access or create log history";
+        }
+        fprintf(log_file, "Server Logs\n"); // Write header
+        fclose(log_file);
+        return "No operation history found.";
+    }
+    
     char line[BUFFER_SIZE];
+    int found_entries = 0;
+    
     // Skip header if present
     fgets(line, sizeof(line), log_file);
     
@@ -328,12 +343,19 @@ char* handle_log(const UserSession* session) {
         if (sscanf(line, "[%*[^]]] %s", log_username) == 1) {
             // If this log is for our user, append it to response
             if (strcmp(log_username, session->username) == 0) {
-                strcat(response, line);
+                found_entries = 1;
+                if (strlen(response) + strlen(line) < BUFFER_SIZE - 1) {
+                    strcat(response, line);
+                }
             }
         }
     }
     
     fclose(log_file);
+    
+    if (!found_entries) {
+        snprintf(response, BUFFER_SIZE, "No operation history found for user %s.", session->username);
+    }
     
     // Before sending response back to client
     printf("%sThe main server has sent the log response to the client.%s\n",
@@ -396,6 +418,9 @@ void* handle_client(void* arg) {
                 response = "AUTH_FAILED";
                 conn->session.is_authenticated = 0;  // Ensure session is marked as not authenticated
             }
+
+            // Add this print statement after determining the auth response
+            printf("The main server has sent the response from server A to client using TCP over port %d\n", MAIN_TCP_PORT);
         }
         else if (strcmp(command, "LOOKUP") == 0) {
             if (conn->session.is_guest) {
@@ -538,9 +563,6 @@ int main() {
     server_resources.server_a_addr = server_a_addr;
     server_resources.server_r_addr = server_r_addr;
     server_resources.server_d_addr = server_d_addr;
-
-    // Keep track of authenticated sessions
-    UserSession current_session = {0};
 
     while (1) {
         fd_set readfds;
