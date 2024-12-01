@@ -219,16 +219,10 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
         fgets(answer, sizeof(answer), stdin);
         answer[strcspn(answer, "\n")] = '\0';
         
-        // If user says no, don't proceed with push
-        if (answer[0] == 'N' || answer[0] == 'n') {
-            printf("%s was not pushed successfully.\n", filename);
-            printf("----Start a new request----\n");
-            return;
-        }
-        
         // Send overwrite response
         send(server_fd, answer, strlen(answer), 0);
         
+        // If user says no, still wait for server's final response
         // Clear buffer before receiving final response
         memset(buffer, 0, sizeof(buffer));
         
@@ -239,13 +233,22 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
             return;
         }
         buffer[len] = '\0';
-    }
-    
-    // Print final result based on server's response
-    if (strstr(buffer, "successful") != NULL) {
-        printf("%s pushed successfully\n", filename);
+        
+        // Print final result
+        if (answer[0] == 'N' || answer[0] == 'n') {
+            printf("%s was not pushed successfully.\n", filename);
+        } else if (strstr(buffer, "successful") != NULL) {
+            printf("%s pushed successfully\n", filename);
+        } else {
+            printf("%s was not pushed successfully.\n", filename);
+        }
     } else {
-        printf("%s was not pushed successfully.\n", filename);
+        // Handle non-overwrite case
+        if (strstr(buffer, "successful") != NULL) {
+            printf("%s pushed successfully\n", filename);
+        } else {
+            printf("%s was not pushed successfully.\n", filename);
+        }
     }
 
     printf("----Start a new request----\n");

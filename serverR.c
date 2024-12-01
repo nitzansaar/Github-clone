@@ -20,8 +20,8 @@ char* get_user_files(const char* username) {
     char line[BUFFER_SIZE];
     int file_count = 0;
     
-    // Initialize result
-    // snprintf(result, BUFFER_SIZE, "Files for user %s:\n", username);
+    // Clear the result buffer before starting
+    memset(result, 0, BUFFER_SIZE);
     
     // Skip the header line
     fgets(line, sizeof(line), file);
@@ -47,7 +47,7 @@ char* get_user_files(const char* username) {
     }
     
     if (file_count == 0) {
-        strcat(result, "No files found.\n");
+        strcpy(result, "No files found.\n");
     }
     
     fclose(file);
