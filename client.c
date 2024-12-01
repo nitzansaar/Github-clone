@@ -12,12 +12,6 @@
 #define PURPLE "\033[35m"
 #define RESET "\033[0m"
 
-/*
-After the client gets authenticated, it doesnt exit the program. You are basically 'logged in' to the server.
-You can then use the lookup and push commands to interact with the server.
-Currently, we exit the program after authentication.
-So we need to change that so that the client can keep running and interacting with the server.
-*/
 
 char authenticated_user[50] = {0};
 bool is_guest = false;
@@ -84,8 +78,12 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
 
     // Receive response
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
-    if (len < 0) {
-        perror("Error receiving lookup response");
+    if (len <= 0) {  // Check for both error and connection closure
+        if (len < 0) {
+            perror("Error receiving lookup response");
+        } else {
+            printf("Server closed connection\n");
+        }
         return;
     }
     buffer[len] = '\0';
@@ -379,32 +377,33 @@ void handle_log_command(int server_fd) {
     printf("----Start a new request----\n");
 }
 
-// Update the main function to set the guest flag
 int main(int argc, char* argv[]) {
     printf("%sThe client is up and running.%s\n", PURPLE, RESET);
     
+    // Validate command line arguments (username/password or lookup command)
     if (argc < 2 || argc > 3) {
         print_usage();
         return -1;
     }
 
-    // Set guest flag if credentials are "guest guest"
+    // Check if this is a guest login attempt
     is_guest = (argc == 3 && strcmp(argv[1], "guest") == 0 && strcmp(argv[2], "guest") == 0);
 
     struct sockaddr_in server_address;
     char command[20], username[50];
 
+    // Establish TCP connection with serverM (uses dynamic port assignment)
     int server_fd = setup_connection(&server_address, is_guest);
     if (server_fd < 0) {
         return -1;
     }
 
-    // Authenticate user
+    // Authenticate with serverM (which communicates with serverA)
     if (argc == 3) {
         if (authenticate_user(server_fd, argv[1], argv[2]) > 0) {
             strncpy(authenticated_user, argv[1], sizeof(authenticated_user) - 1);
         } else {
-            close(server_fd);
+            close(server_fd);  // Clean up on authentication failure
             return -1;
         }
     } else {
@@ -413,8 +412,9 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // now we are authenticated, we can send other commands
+    // Main command loop - handles user interactions
     while (1) {
+        // Display appropriate command prompt based on user type
         if (is_guest) {
             printf("Please enter the command: <lookup <username>>\n");
         } else {
@@ -422,21 +422,28 @@ int main(int argc, char* argv[]) {
                    "<remove <filename> > , <deploy> , <log>.\n");
         }
         
-        fgets(command, sizeof(command), stdin);
+        // Read and parse user command
+        if (fgets(command, sizeof(command), stdin) == NULL) {
+            printf("Error reading command. Exiting.\n");
+            break;
+        }
         command[strcspn(command, "\n")] = '\0';
         
-        int parsed = sscanf(command, "%s %s", command, username);
-        
-        // For guests, only allow lookup command
-        if (is_guest && strcmp(command, "lookup") != 0) {
-            printf("Guests can only use the lookup command\n");
-            continue;
+        // Handle exit command for graceful shutdown
+        if (strcmp(command, "exit") == 0) {
+            printf("Exiting...\n");
+            break;
         }
         
-        // Handle commands as before
+        // Parse command and arguments
+        int parsed = sscanf(command, "%s %s", command, username);
+        
+        // Route command to appropriate handler
+        // Each handler manages its own dynamic port retrieval via getsockname()
         if (parsed >= 1 && strcmp(command, "lookup") == 0) {
             handle_lookup_command(server_fd, username, parsed);
-        } else if (!is_guest) {  // Only allow these commands for non-guests
+        } else if (!is_guest) {
+            // Member-only commands
             if (strcmp(command, "push") == 0) {
                 handle_push_command(server_fd, username, parsed);
             } else if (strcmp(command, "deploy") == 0) {
@@ -446,20 +453,24 @@ int main(int argc, char* argv[]) {
             } else if (strcmp(command, "log") == 0) {
                 handle_log_command(server_fd);
             } else {
+                // Invalid command handling
                 if (is_guest) {
                     printf("Guests can only use the lookup command\n");
                 } else {
                     printf("Invalid command. Available commands:\n");
                     printf("1. lookup <username>\n");
                     printf("2. push <filename>\n");
-                    printf("3. deploy <filename>\n");
+                    printf("3. deploy\n");
                     printf("4. remove <filename>\n");
                     printf("5. log\n");
+                    printf("6. exit\n");
                 }
             }
         }
     }
     
+    // Clean up and close connection
     close(server_fd);
+    printf("Connection closed.\n");
     return 0;
 }

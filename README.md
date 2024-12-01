@@ -1,4 +1,4 @@
-# EE450 Socket Programming Project
+# EE450 Socket Programming Project (Github Code Management Platform)
 
 ## Personal Information
 - **Full Name:** Nitzan Saar
@@ -17,26 +17,54 @@ I have completed the main requirements of the project, including extra credit, w
    - Main server coordinating all operations
    - Handles client connections and routes requests
    - Manages communication with other servers
+   - Implements thread-safe logging
+   - Supports both TCP (for clients) and UDP (for backend servers)
+   - Handles authentication, file operations, and deployment requests
 
 2. **serverA.c**
    - Authentication server
    - Handles user credential verification
    - Manages encrypted password storage
+   - Implements Caesar cipher decryption
+   - Supports both member and guest authentication
+   - Reads from members.txt and original.txt for credential verification
 
 3. **serverR.c**
    - Repository server
    - Manages file storage and operations
    - Handles file lookup, push, and remove requests
+   - Maintains filenames.txt database
+   - Supports file overwrite confirmation
+   - Implements concurrent file access safety
 
 4. **serverD.c**
    - Deployment server
    - Manages file deployment operations
-   - Maintains deployment logs
+   - Maintains deployment logs in deployed.txt
+   - Coordinates with serverR for file information
+   - Timestamps all deployments
+   - Provides detailed deployment status reports
 
 5. **client.c**
    - Client application
    - Handles user interaction
-   - Manages connection with main server
+   - Manages connection with main server using dynamic ports:
+     - System automatically assigns available ports for each connection
+     - Uses getsockname() to retrieve the assigned port number
+     - Supports multiple concurrent client connections
+     - Different ports for member (25693) and guest (25694) connections
+   - Supports all file operations
+   - Implements guest and member modes
+   - Provides colored output for better readability
+   - Reports port numbers in operation logs for debugging
+
+6. **Supporting Files**
+   - **members.txt**: Encrypted user credentials
+   - **original.txt**: Unencrypted user credentials
+   - **filenames.txt**: Repository file database
+   - **deployed.txt**: Deployment history log
+   - **server_logs.txt**: Operation history log
+   - **Makefile**: Build and management scripts
 
 ## Message Formats
 

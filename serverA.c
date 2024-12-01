@@ -8,12 +8,15 @@
 #include <ctype.h>
 #include <errno.h>  
 
-#define PORT 21693    // Changed from 21000
+#define PORT 21693
+
+// Function prototypes with descriptive comments
+// Decrypts text using a Caesar cipher with shift of 3
 void decrypt(char* encrypted, char* decrypted);
+// Validates user credentials against stored credentials
 int authenticate(char *username, char *password);
+// Determines user type and authentication status
 const char* check_credentials(char* username, char* password);
-
-
 
 int main() {
     int server_fd;  
@@ -39,6 +42,7 @@ int main() {
     printf("Server A is up and running using UDP on port %d\n", PORT);
 
     while (1) {
+        // Receive and parse credentials from client
         int len = recvfrom(server_fd, buffer, 1024, 0, (struct sockaddr *)&address, (socklen_t*)&addrlen);
         buffer[len] = '\0';
 
@@ -46,9 +50,7 @@ int main() {
         sscanf(buffer, "%s %s", username, password);
         printf("ServerA received username %s and password ******\n", username);
 
-        // Get authentication response with user type
         const char* response = check_credentials(username, password);
-        
         sendto(server_fd, response, strlen(response), 0,
                (struct sockaddr *)&address, addrlen);
     }
@@ -57,19 +59,13 @@ int main() {
     return 0;
 }
 
-// New function to check credentials and return appropriate response
 const char* check_credentials(char* username, char* password) {
-    // Check for guest login
     if (strcmp(username, "guest") == 0 && strcmp(password, "guest") == 0) {
         return "GUEST_AUTH_SUCCESS";
     }
     
-    // For regular members, use existing authentication
-    if (authenticate(username, password) == 1) {
-        return "MEMBER_AUTH_SUCCESS";
-    }
-    
-    return "AUTH_FAILED";
+    // Regular member authentication
+    return (authenticate(username, password) == 1) ? "MEMBER_AUTH_SUCCESS" : "AUTH_FAILED";
 }
 
 void decrypt(char* encrypted, char* decrypted) {
@@ -95,10 +91,10 @@ void decrypt(char* encrypted, char* decrypted) {
 }
 
 int authenticate(char *username, char *password) {
-    
     FILE *encrypted_file = fopen("members.txt", "r");
     FILE *original_file = fopen("original.txt", "r");
     
+    // Validate file handles
     if (!encrypted_file || !original_file) {
         perror("Failed to open one or both files");
         if (encrypted_file) fclose(encrypted_file);
@@ -111,38 +107,27 @@ int authenticate(char *username, char *password) {
     char original_username[50], original_password[50];
     int found = 0;
     
-    // Read through both files simultaneously
+    // Read and compare credentials from both files
     while (fgets(encrypted_line, sizeof(encrypted_line), encrypted_file) != NULL &&
            fgets(original_line, sizeof(original_line), original_file) != NULL) {
         
-        // Remove newlines if present
+        // Remove newlines and parse credentials
         encrypted_line[strcspn(encrypted_line, "\n")] = 0;
         original_line[strcspn(original_line, "\n")] = 0;
-        
-        // Parse both lines
         sscanf(encrypted_line, "%s %s", encrypted_username, encrypted_password);
         sscanf(original_line, "%s %s", original_username, original_password);
         
-        
-        // Check if this is the user we're looking for
         if (strcmp(username, encrypted_username) == 0) {
             found = 1;
-            char decrypted_password[50];
-            decrypt(encrypted_password, decrypted_password);
-            
-            
-            // Compare with provided password
+            // Compare with provided password using original (unencrypted) credentials
             if (strcmp(password, original_password) == 0) {
                 printf("Member %s has been authenticated\n", username);
                 fclose(encrypted_file);
                 fclose(original_file);
-                return 1; // success
-            } else {
-                printf("The username %s or password ****** is incorrect\n", username);
-                fclose(encrypted_file);
-                fclose(original_file);
-                return 0; // fail
+                return 1;
             }
+            printf("The username %s or password ****** is incorrect\n", username);
+            break;
         }
     }
     

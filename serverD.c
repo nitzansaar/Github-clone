@@ -10,12 +10,12 @@
 #define SERVER_R_PORT 22693
 #define BUFFER_SIZE 1024
 
-// Function to get files from Server R for a specific user
+/* Communicates with Server R to retrieve files associated with a username
+   Returns NULL if communication fails, otherwise returns the file list */
 char* get_files_from_server_r(int udp_socket, struct sockaddr_in server_r_addr, const char* username) {
     static char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
     
-    // Send lookup request to Server R
     snprintf(buffer, BUFFER_SIZE, "LOOKUP %s SERVER_D", username);
     
     if (sendto(udp_socket, buffer, strlen(buffer), 0, 
@@ -23,7 +23,6 @@ char* get_files_from_server_r(int udp_socket, struct sockaddr_in server_r_addr, 
         return NULL;
     }
     
-    // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
     int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
                                (struct sockaddr*)&server_r_addr, &server_len);
@@ -35,7 +34,11 @@ char* get_files_from_server_r(int udp_socket, struct sockaddr_in server_r_addr, 
     return response;
 }
 
-// Function to handle deployment
+/* Handles the deployment process:
+   1. Retrieves files from Server R
+   2. Creates deployment record in deployed.txt
+   3. Returns formatted deployment response
+   Returns error message if deployment fails */
 char* handle_deploy(int udp_socket, struct sockaddr_in server_r_addr, const char* username) {
     static char response[BUFFER_SIZE];
     
@@ -104,12 +107,18 @@ int main() {
     // Add boot-up message
     printf("Server D is up and running using UDP on port %d\n", SERVER_D_PORT);
 
+    /* Main server loop:
+       1. Waits for deployment requests
+       2. Parses incoming commands
+       3. Handles DEPLOY commands by:
+          - Retrieving files from Server R
+          - Creating deployment records
+          - Sending confirmation back to client */
     while (1) {
         char buffer[BUFFER_SIZE];
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         
-        // Receive deployment request
         int bytes_received = recvfrom(udp_socket, buffer, BUFFER_SIZE - 1, 0,
                                     (struct sockaddr*)&client_addr, &client_len);
         if (bytes_received < 0) {
@@ -118,20 +127,15 @@ int main() {
         
         buffer[bytes_received] = '\0';
         
-        // Parse the deploy command
         char command[20], username[50];
         sscanf(buffer, "%s %s", command, username);
         
         if (strcmp(command, "DEPLOY") == 0) {
-            // Add deployment request received message
             printf("Server D has received a deploy request from the main server.\n");
             
             char* deploy_response = handle_deploy(udp_socket, server_r_addr, username);
-            
-            // Add deployment completion message
             printf("Server D has deployed the user %s's repository.\n", username);
             
-            // Send response back
             sendto(udp_socket, deploy_response, strlen(deploy_response), 0,
                    (struct sockaddr*)&client_addr, client_len);
         }

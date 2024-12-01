@@ -19,25 +19,27 @@
 #define PURPLE "\033[35m"
 #define RESET "\033[0m"
 
-// Add this prototype near the top of the file, with other function prototypes
+// Add this function prototype
 void log_operation(const char* username, const char* operation, const char* details);
 
+// Stores user session information including authentication status
 typedef struct {
     char username[50];
     int is_guest;
     int is_authenticated;
 } UserSession;
 
+// Stores client connection details and associated session
 typedef struct {
     int socket;
     struct sockaddr_in address;
     UserSession session;
 } ClientConnection;
 
-// Add mutex for thread-safe operations
+// Thread-safe logging mutex
 pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Add near the top of the file with other global definitions
+// Stores UDP socket and server addresses for backend communication
 typedef struct {
     int udp_socket;
     struct sockaddr_in server_a_addr;
@@ -48,7 +50,7 @@ typedef struct {
 // Global instance
 ServerResources server_resources;
 
-// Function to handle authentication
+// Authenticates user against Server A and returns session info
 UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr, 
                        const char* username, const char* password) {
     UserSession session = {0};
@@ -88,7 +90,7 @@ UserSession handle_auth(int udp_socket, struct sockaddr_in server_a_addr,
     return session;
 }
 
-// Function to check if username exists in members.txt
+// Verifies if username exists in members database
 int user_exists(const char* username) {
     FILE* file = fopen("members.txt", "r");
     if (!file) {
@@ -114,7 +116,7 @@ int user_exists(const char* username) {
     return 0;
 }
 
-// Function to handle lookup requests
+// Processes lookup requests by forwarding to Server R
 char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr, 
                    const char* target_username, const UserSession* session) {
     static char response[BUFFER_SIZE];
@@ -148,9 +150,7 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     if (response_len < 0) {
         return "Error: Failed to receive lookup response";
     }
-    
-    // printf("The main server has received the response from server R using UDP over %d\n", MAIN_TCP_PORT);
-    
+        
     response[response_len] = '\0';
     
     // Log successful lookup operation
@@ -161,15 +161,12 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
     return response;
 }
 
-// Function to handle push requests
+// Handles file push requests and overwrite confirmations with Server R
 char* handle_push(int udp_socket, struct sockaddr_in server_r_addr, 
                  const char* username, const char* filename, const UserSession* session, int client_socket) {
     static char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
 
-    // Upon receiving push request from client
-    // printf("The main server has received a push request from %s, using TCP over port %d.\n", 
-    //        username, MAIN_TCP_PORT);
 
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
@@ -228,12 +225,11 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
         response[response_len] = '\0';
     }
 
-    // After forwarding the response to the client
-    // printf("The main server has sent the response to the client.\n");
 
     return response;
 }
 
+// Processes deploy requests by coordinating with Server D
 char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr, 
                    const char* username, const UserSession* session) {
     static char response[BUFFER_SIZE];
@@ -269,6 +265,7 @@ char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr,
     return response;
 }
 
+// Handles file removal requests through Server R
 char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr, 
                    const char* filename, const UserSession* session) {
     static char response[BUFFER_SIZE];
@@ -302,6 +299,7 @@ char* handle_remove(int udp_socket, struct sockaddr_in server_r_addr,
     return response;
 }
 
+// Retrieves and formats user operation history
 char* handle_log(const UserSession* session) {
     static char response[BUFFER_SIZE];
     
@@ -364,6 +362,7 @@ char* handle_log(const UserSession* session) {
     return response;
 }
 
+// Thread-safe logging of user operations
 void log_operation(const char* username, const char* operation, const char* details) {
     pthread_mutex_lock(&log_mutex);
     
@@ -385,6 +384,7 @@ void log_operation(const char* username, const char* operation, const char* deta
     pthread_mutex_unlock(&log_mutex);
 }
 
+// Main client connection handler - processes all client requests
 void* handle_client(void* arg) {
     ClientConnection* conn = (ClientConnection*)arg;
     char buffer[BUFFER_SIZE];
@@ -419,7 +419,6 @@ void* handle_client(void* arg) {
                 conn->session.is_authenticated = 0;  // Ensure session is marked as not authenticated
             }
 
-            // Add this print statement after determining the auth response
             printf("The main server has sent the response from server A to client using TCP over port %d\n", MAIN_TCP_PORT);
         }
         else if (strcmp(command, "LOOKUP") == 0) {
@@ -458,7 +457,7 @@ void* handle_client(void* arg) {
                                    server_resources.server_d_addr,
                                    conn->session.username, &conn->session);
             
-            // After receiving success response
+            // // After receiving success response
             // if (strstr(response, "successful") != NULL) {
             //     printf("The user %s's repository has been deployed at server D.\n", 
             //            conn->session.username);
@@ -495,6 +494,7 @@ void* handle_client(void* arg) {
     return NULL;
 }
 
+// Main server loop - handles TCP connections and spawns client threads
 int main() {
     int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
     int tcp_guest_socket = socket(AF_INET, SOCK_STREAM, 0);

@@ -9,6 +9,9 @@
 #define PORT 22693
 #define BUFFER_SIZE 1024
 
+/**
+ * Retrieves a formatted list of files associated with a given username
+ */
 char* get_user_files(const char* username) {
     FILE* file = fopen("filenames.txt", "r");
     if (!file) {
@@ -20,24 +23,14 @@ char* get_user_files(const char* username) {
     char line[BUFFER_SIZE];
     int file_count = 0;
     
-    // Clear the result buffer before starting
     memset(result, 0, BUFFER_SIZE);
+    fgets(line, sizeof(line), file);  // Skip header
     
-    // Skip the header line
-    fgets(line, sizeof(line), file);
-    
-    // Read each line and collect all files for the user
     while (fgets(line, sizeof(line), file)) {
-        char current_username[100];
-        char filename[100];
-        
-        // Remove newline if present
-        line[strcspn(line, "\n")] = 0;
-        
-        // Parse the line
+        char current_username[100], filename[100];
+        line[strcspn(line, "\n")] = 0;  // Remove newline
         sscanf(line, "%s %s", current_username, filename);
         
-        // If this line is for our user
         if (strcmp(current_username, username) == 0) {
             file_count++;
             char temp[256];
@@ -54,6 +47,9 @@ char* get_user_files(const char* username) {
     return result;
 }
 
+/**
+ * Checks if a file exists for a specific user
+ */
 int file_exists(const char* username, const char* filename) {
     FILE* file = fopen("filenames.txt", "r");
     if (!file) {
@@ -81,6 +77,10 @@ int file_exists(const char* username, const char* filename) {
     return 0;  // File not found
 }
 
+/**
+ * Adds a new file entry to the repository
+ * Note: Does not check for duplicates - use file_exists() first
+ */
 void add_file_entry(const char* username, const char* filename) {
     FILE* file = fopen("filenames.txt", "a");
     if (!file) {
@@ -91,10 +91,11 @@ void add_file_entry(const char* username, const char* filename) {
     // Add new entry
     fprintf(file, "%s %s\n", username, filename);
     fclose(file);
-    
-    // printf("Server R: Added new file entry - User: %s, File: %s\n", username, filename);
 }
 
+/**
+ * Removes a file entry from the repository
+ */
 int remove_file_entry(const char* username, const char* filename) {
     FILE* file = fopen("filenames.txt", "r");
     FILE* temp = fopen("temp.txt", "w");
@@ -168,8 +169,8 @@ int main() {
         char request_type[20], username[50], requesting_user[50];
         sscanf(buffer, "%s %s %s", request_type, username, requesting_user);
         
-        if (strcmp(request_type, "LOOKUP") == 0) {
-            printf("Server R has received a lookup request from the main server.\n");
+        if (strcmp(request_type, "LOOKUP") == 0 || strcmp(request_type, "DEPLOY") == 0) {
+            printf("Server R has received a %s request from the main server.\n", request_type);
             char* files_list = get_user_files(username);
             
             sendto(server_fd, files_list, strlen(files_list), 0,
@@ -226,17 +227,6 @@ int main() {
             
             sendto(server_fd, buffer, strlen(buffer), 0,
                    (struct sockaddr *)&address, addrlen);
-        } else if (strcmp(request_type, "DEPLOY") == 0) {
-            printf("Server R has received a deploy request from the main server.\n");
-            
-            // Get the list of files for the user
-            char* files_list = get_user_files(username);
-            
-            // Send the deployment list back to main server
-            sendto(server_fd, files_list, strlen(files_list), 0,
-                   (struct sockaddr *)&address, addrlen);
-            
-            printf("Server R has finished sending the response to the main server.\n");
         }
     }
 
