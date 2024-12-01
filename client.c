@@ -22,7 +22,6 @@ So we need to change that so that the client can keep running and interacting wi
 char authenticated_user[50] = {0};
 bool is_guest = false;
 
-void log_operation(const char* username, const char* operation, const char* details);
 void handle_lookup_command(int server_fd, const char* username, int parsed);
 void handle_push_command(int server_fd, const char* filename, int parsed);
 void handle_deploy_command(int server_fd);
@@ -42,6 +41,15 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
     char buffer[1024];
     char lookup_msg[1024];
     const char* lookup_username;
+    struct sockaddr_in local_addr;
+    socklen_t addr_len = sizeof(local_addr);
+    
+    // Get dynamically assigned port using getsockname()
+    int getsock_check = getsockname(server_fd, (struct sockaddr *)&local_addr, &addr_len);
+    if (getsock_check == -1) {
+        perror("getsockname");
+        exit(1);
+    }
     
     // If no username specified and user is a member (not guest), use authenticated username
     if (parsed == 1 && !is_guest) {
@@ -67,7 +75,7 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
         return;
     }
     
-    // Print sent message
+    // Print sent message using dynamically retrieved port
     if (is_guest) {
         printf("Guest sent a lookup request to the main server.\n");
     } else {
@@ -82,15 +90,9 @@ void handle_lookup_command(int server_fd, const char* username, int parsed) {
     }
     buffer[len] = '\0';
     
-    // Get the client's port number
-    struct sockaddr_in local_addr;
-    socklen_t addr_len = sizeof(local_addr);
-    getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
-    int client_port = ntohs(local_addr.sin_port);
-    
-    // Print response header for all cases
+    // Print response using dynamically retrieved port
     printf("The client received the response from the main server using TCP over port %d.\n", 
-           client_port);
+           ntohs(local_addr.sin_port));
 
     // Check if the username does not exist first
     if (strstr(buffer, "does not exist") != NULL || strstr(buffer, "not found") != NULL) {
@@ -277,11 +279,8 @@ void handle_deploy_command(int server_fd) {
     struct sockaddr_in local_addr;
     socklen_t addr_len = sizeof(local_addr);
     getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
-    int client_port = ntohs(local_addr.sin_port);
-    
-    // Print response header
     printf("The client received the response from the main server using TCP over port %d.\n", 
-           client_port);
+           ntohs(local_addr.sin_port));
            
     if (strstr(buffer, "Error") == NULL && strlen(buffer) > 0) {
         printf("The following files in his/her repository have been deployed.\n");
@@ -330,11 +329,8 @@ void handle_remove_command(int server_fd, const char* filename, int parsed) {
     struct sockaddr_in local_addr;
     socklen_t addr_len = sizeof(local_addr);
     getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
-    int client_port = ntohs(local_addr.sin_port);
-    
-    // Print response header
     printf("The client received the response from the main server using TCP over port %d.\n", 
-           client_port);
+           ntohs(local_addr.sin_port));
     
     // Print result
     if (strstr(buffer, "successfully") != NULL) {
@@ -373,28 +369,14 @@ void handle_log_command(int server_fd) {
     struct sockaddr_in local_addr;
     socklen_t addr_len = sizeof(local_addr);
     getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
-    int client_port = ntohs(local_addr.sin_port);
-    
-    // Print response header
     printf("The client received the response from the main server using TCP over port %d.\n", 
-           client_port);
+           ntohs(local_addr.sin_port));
     
     // Print the numbered list of operations
     printf("%s\n", buffer);
     
     // Print delimiter
     printf("----Start a new request----\n");
-}
-
-void log_operation(const char* username, const char* operation, const char* details) {
-    char log_msg[1024];
-    snprintf(log_msg, sizeof(log_msg), "LOG_ENTRY %s %s %s", username, operation, details);
-    
-    FILE* log_file = fopen("operations.log", "a");
-    if (log_file) {
-        fprintf(log_file, "%s\n", log_msg);
-        fclose(log_file);
-    }
 }
 
 // Update the main function to set the guest flag
@@ -410,7 +392,7 @@ int main(int argc, char* argv[]) {
     is_guest = (argc == 3 && strcmp(argv[1], "guest") == 0 && strcmp(argv[2], "guest") == 0);
 
     struct sockaddr_in server_address;
-    char message[1024];
+    char command[20], username[50];
 
     int server_fd = setup_connection(&server_address, is_guest);
     if (server_fd < 0) {
@@ -440,11 +422,10 @@ int main(int argc, char* argv[]) {
                    "<remove <filename> > , <deploy> , <log>.\n");
         }
         
-        fgets(message, sizeof(message), stdin);
-        message[strcspn(message, "\n")] = '\0';
+        fgets(command, sizeof(command), stdin);
+        command[strcspn(command, "\n")] = '\0';
         
-        char command[20], username[50];
-        int parsed = sscanf(message, "%s %s", command, username);
+        int parsed = sscanf(command, "%s %s", command, username);
         
         // For guests, only allow lookup command
         if (is_guest && strcmp(command, "lookup") != 0) {
