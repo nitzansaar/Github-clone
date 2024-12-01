@@ -36,7 +36,7 @@ int main() {
         close(server_fd);
         exit(EXIT_FAILURE);
     }
-    printf("Server A is up and running using UDP on port %d...\n", PORT);
+    printf("Server A is up and running using UDP on port %d\n", PORT);
 
     while (1) {
         int len = recvfrom(server_fd, buffer, 1024, 0, (struct sockaddr *)&address, (socklen_t*)&addrlen);
@@ -138,7 +138,7 @@ int authenticate(char *username, char *password) {
                 fclose(original_file);
                 return 1; // success
             } else {
-                printf("Debug: Password mismatch\n");
+                printf("The username %s or password ****** is incorrect\n", username);
                 fclose(encrypted_file);
                 fclose(original_file);
                 return 0; // fail

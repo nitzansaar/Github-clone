@@ -101,7 +101,8 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    printf("Server D is up and running on port %d\n", SERVER_D_PORT);
+    // Add boot-up message
+    printf("Server D is up and running using UDP on port %d\n", SERVER_D_PORT);
 
     while (1) {
         char buffer[BUFFER_SIZE];
@@ -122,7 +123,13 @@ int main() {
         sscanf(buffer, "%s %s", command, username);
         
         if (strcmp(command, "DEPLOY") == 0) {
+            // Add deployment request received message
+            printf("Server D has received a deploy request from the main server.\n");
+            
             char* deploy_response = handle_deploy(udp_socket, server_r_addr, username);
+            
+            // Add deployment completion message
+            printf("Server D has deployed the user %s's repository.\n", username);
             
             // Send response back
             sendto(udp_socket, deploy_response, strlen(deploy_response), 0,

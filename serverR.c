@@ -92,7 +92,7 @@ void add_file_entry(const char* username, const char* filename) {
     fprintf(file, "%s %s\n", username, filename);
     fclose(file);
     
-    printf("Server R: Added new file entry - User: %s, File: %s\n", username, filename);
+    // printf("Server R: Added new file entry - User: %s, File: %s\n", username, filename);
 }
 
 int remove_file_entry(const char* username, const char* filename) {
@@ -228,10 +228,14 @@ int main() {
                    (struct sockaddr *)&address, addrlen);
         } else if (strcmp(request_type, "DEPLOY") == 0) {
             printf("Server R has received a deploy request from the main server.\n");
-            // Simulate sending response
-            sprintf(buffer, "Deployment list for %s", username);
-            sendto(server_fd, buffer, strlen(buffer), 0,
+            
+            // Get the list of files for the user
+            char* files_list = get_user_files(username);
+            
+            // Send the deployment list back to main server
+            sendto(server_fd, files_list, strlen(files_list), 0,
                    (struct sockaddr *)&address, addrlen);
+            
             printf("Server R has finished sending the response to the main server.\n");
         }
     }

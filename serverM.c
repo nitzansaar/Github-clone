@@ -167,8 +167,15 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     static char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
 
+    // Upon receiving push request from client
+    printf("The main server has received a push request from %s, using TCP over port %d.\n", 
+           username, MAIN_TCP_PORT);
+
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
+    
+    // After forwarding the push request to server R
+    printf("The main server has sent the push request to server R.\n");
     
     if (sendto(udp_socket, buffer, strlen(buffer), 0, 
                (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
@@ -184,19 +191,32 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
     }
     response[response_len] = '\0';
 
+    // Upon receiving a push request response from Server R
+    printf("The main server has received the response from server R using UDP over %d\n", 
+           MAIN_TCP_PORT);
+
     // If overwrite confirmation is needed
     if (strstr(response, "OVERWRITE_CONFIRM") != NULL) {
+        // Upon receiving response from server R asking for overwrite confirmation
+        printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", 
+               MAIN_TCP_PORT);
+
+        // After forwarding the overwrite confirmation request to the client
+        printf("The main server has sent the overwrite confirmation request to the client.\n");
+        
         // Forward the confirmation request to client
         send(client_socket, response, strlen(response), 0);
         
         // Get client's response
         char client_response[10];
         recv(client_socket, client_response, sizeof(client_response) - 1, 0);
+
+        // Upon receiving overwrite confirmation response from client
+        printf("The main server has received the overwrite confirmation response from %s using TCP over port %d\n",
+               username, MAIN_TCP_PORT);
         
-        // If user declined overwrite, return unsuccessful
-        if (client_response[0] == 'N' || client_response[0] == 'n') {
-            return "unsuccessful";
-        }
+        // After forwarding the overwrite confirmation response to server R
+        printf("The main server has sent the overwrite confirmation response to server R.\n");
         
         // Forward client's response to Server R
         sendto(udp_socket, client_response, strlen(client_response), 0,
@@ -207,6 +227,9 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
                                (struct sockaddr*)&server_r_addr, &server_len);
         response[response_len] = '\0';
     }
+
+    // After forwarding the response to the client
+    // printf("The main server has sent the response to the client.\n");
 
     return response;
 }
@@ -240,6 +263,8 @@ char* handle_deploy(int udp_socket, struct sockaddr_in server_d_addr,
     response[response_len] = '\0';
     if (strstr(response, "successful") != NULL) {
         log_operation(session->username, "DEPLOY", "all files");
+        // After receiving confirmation response from server D
+        printf("The user %s's repository has been deployed at server D.\n", username);
     }
     return response;
 }
@@ -435,7 +460,7 @@ void* handle_client(void* arg) {
         if (response) {
             send(conn->socket, response, strlen(response), 0);
             pthread_mutex_lock(&log_mutex);
-            printf("The main server has sent the response to the client using TCP over port %d.\n", MAIN_TCP_PORT);
+            // printf("The main server has sent the response to the client.\n");
             pthread_mutex_unlock(&log_mutex);
         }
     }
