@@ -338,11 +338,12 @@ void* handle_client(void* arg) {
                                       arg1, arg2);
             
             if (conn->session.is_guest && conn->session.is_authenticated) {
-                response = "Authentication successful - Welcome guest! Note: Limited access rights applied";
-            } else if (conn->session.is_authenticated) {
-                response = "Authentication successful - Welcome member!";
+                response = "GUEST_AUTH_SUCCESS";
+            } else if (!conn->session.is_guest && conn->session.is_authenticated) {
+                response = "MEMBER_AUTH_SUCCESS";
             } else {
-                response = "Authentication failed - Invalid credentials";
+                response = "AUTH_FAILED";
+                conn->session.is_authenticated = 0;  // Ensure session is marked as not authenticated
             }
         }
         else if (strcmp(command, "LOOKUP") == 0) {

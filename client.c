@@ -22,18 +22,19 @@ Currently, we exit the program after authentication.
 So we need to change that so that the client can keep running and interacting with the server.
 */
 
-// Store the authenticated username globally
+// Add these with other global variables at the top of the file
 char authenticated_user[50] = {0};
+bool is_guest = false;
 
 // Add this with the other function prototypes near the top of the file
 void log_operation(const char* username, const char* operation, const char* details);
 
-void handle_lookup_command(int server_fd, const char* command, const char* username, int parsed);
-void handle_push_command(int server_fd, const char* command, const char* filename, int parsed);
-void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed);
+void handle_lookup_command(int server_fd, const char* username, int parsed);
+void handle_push_command(int server_fd, const char* filename, int parsed);
+void handle_deploy_command(int server_fd);
 int setup_connection(struct sockaddr_in* server_address, bool is_guest);
 int authenticate_user(int server_fd, const char* username, const char* password);
-void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed);
+void handle_remove_command(int server_fd, const char* filename, int parsed);
 void handle_log_command(int server_fd);
 
 void print_usage() {
@@ -43,19 +44,27 @@ void print_usage() {
     printf("Note: Use 'guest guest' for guest access\n");
 }
 
-void handle_lookup_command(int server_fd, const char* command, const char* username, int parsed) {
+void handle_lookup_command(int server_fd, const char* username, int parsed) {
     char buffer[1024];
     char lookup_msg[1024];
+    const char* lookup_username;
     
-    // Check if username is specified
-    if (parsed != 2) {
-        printf("Error: Username is required. Please specify a username to lookup.\n");
-        printf("----Start a new request----\n");
+    // If no username specified and user is a member (not guest), use authenticated username
+    if (parsed == 1 && !is_guest) {
+        lookup_username = authenticated_user;
+    } else if (parsed != 2) {
+        if (is_guest) {
+            printf("Error: Username is required. Please specify a username to lookup.\n---Start a new request---\n");
+        } else {
+            printf("Error: Invalid command format. Use: lookup [username]\n");
+        }
         return;
+    } else {
+        lookup_username = username;
     }
     
     // Construct lookup message
-    snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", username);
+    snprintf(lookup_msg, sizeof(lookup_msg), "LOOKUP %s", lookup_username);
     
     // Send lookup request
     if (send(server_fd, lookup_msg, strlen(lookup_msg), 0) < 0) {
@@ -63,8 +72,12 @@ void handle_lookup_command(int server_fd, const char* command, const char* usern
         return;
     }
     
-    // Print sent message for guest
-    printf("Guest sent a lookup request to the main server.\n");
+    // Print sent message
+    if (is_guest) {
+        printf("Guest sent a lookup request to the main server.\n");
+    } else {
+        printf("%s sent a lookup request to the main server.\n", authenticated_user);
+    }
 
     // Receive response
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
@@ -80,24 +93,18 @@ void handle_lookup_command(int server_fd, const char* command, const char* usern
     getsockname(server_fd, (struct sockaddr*)&local_addr, &addr_len);
     int client_port = ntohs(local_addr.sin_port);
     
-    // Print standard response header
+    // Print response header for all cases
     printf("The client received the response from the main server using TCP over port %d.\n", 
            client_port);
 
-    // Handle different response cases
+    // Remove the previous error checking and simplify the response handling
     if (strstr(buffer, "does not exist") != NULL) {
-        // Username doesn't exist case
-        printf("%s does not exist. Please try again.\n", username);
-    } else if (strstr(buffer, "Empty repository") != NULL || 
-               strstr(buffer, "No files found") != NULL) {
-        // Empty repository case
-        printf("Empty repository.\n");
+        printf("%s does not exist. Please try again.\n", lookup_username);
     } else {
-        // Normal case with files
-        printf("%s\n", buffer);
+        // Print the server's response directly
+        printf("%s", buffer);
     }
     
-    // Always print the delimiter
     printf("----Start a new request----\n");
 }
 
@@ -134,12 +141,10 @@ int authenticate_user(int server_fd, const char* username, const char* password)
 
     // Send message to server
     ssize_t sent_bytes = send(server_fd, message, strlen(message), 0);
-    printf("Sent message: %s\n", message);
     if (sent_bytes < 0) {
         perror("Error sending message");
         return -1;
     }
-    printf("test\n");
 
     // Receive response
     int len = recv(server_fd, buffer, sizeof(buffer) - 1, 0);
@@ -148,21 +153,27 @@ int authenticate_user(int server_fd, const char* username, const char* password)
         return -1;
     }
     buffer[len] = '\0';
-    printf("\n%s\n", buffer);
 
+    // Guest authentication
     if (strcmp(username, "guest") == 0 && strcmp(password, "guest") == 0) {
-        printf("You have been granted guest access.\n");
-        return 1;
-    } else if (strstr(buffer, "Authentication successful") != NULL) {
-        printf("You have been granted member access\n");
-        return 1;
-    } else {
-        printf("The credentials are incorrect. Please try again.\n");
+        if (strcmp(buffer, "GUEST_AUTH_SUCCESS") == 0) {
+            printf("You have been granted guest access.\n");
+            return 1;
+        }
         return 0;
     }
+    
+    // Member authentication
+    if (strcmp(buffer, "MEMBER_AUTH_SUCCESS") == 0) {
+        printf("You have been granted member access.\n");
+        return 1;
+    }
+    
+    printf("The credentials are incorrect. Please try again.\n");
+    return 0;
 }
 
-void handle_push_command(int server_fd, const char* command, const char* filename, int parsed) {
+void handle_push_command(int server_fd, const char* filename, int parsed) {
     char buffer[1024];
     char push_msg[1024];
     
@@ -223,7 +234,7 @@ void handle_push_command(int server_fd, const char* command, const char* filenam
     }
 }
 
-void handle_deploy_command(int server_fd, const char* command, const char* unused, int parsed) {
+void handle_deploy_command(int server_fd) {
     char buffer[1024];
     
     // Send deploy request
@@ -263,7 +274,7 @@ void handle_deploy_command(int server_fd, const char* command, const char* unuse
     printf("----Start a new request----\n");
 }
 
-void handle_remove_command(int server_fd, const char* command, const char* filename, int parsed) {
+void handle_remove_command(int server_fd, const char* filename, int parsed) {
     char buffer[1024];
     char remove_msg[1024];
     
@@ -350,9 +361,6 @@ void log_operation(const char* username, const char* operation, const char* deta
     }
 }
 
-// Add this near the top with other global variables
-bool is_guest = false;
-
 // Update the main function to set the guest flag
 int main(int argc, char* argv[]) {
     printf("%sThe client is up and running.%s\n", PURPLE, RESET);
@@ -366,7 +374,6 @@ int main(int argc, char* argv[]) {
     is_guest = (argc == 3 && strcmp(argv[1], "guest") == 0 && strcmp(argv[2], "guest") == 0);
 
     struct sockaddr_in server_address;
-    char buffer[1024];
     char message[1024];
 
     int server_fd = setup_connection(&server_address, is_guest);
@@ -411,14 +418,14 @@ int main(int argc, char* argv[]) {
         
         // Handle commands as before
         if (parsed >= 1 && strcmp(command, "lookup") == 0) {
-            handle_lookup_command(server_fd, command, username, parsed);
+            handle_lookup_command(server_fd, username, parsed);
         } else if (!is_guest) {  // Only allow these commands for non-guests
             if (strcmp(command, "push") == 0) {
-                handle_push_command(server_fd, command, username, parsed);
+                handle_push_command(server_fd, username, parsed);
             } else if (strcmp(command, "deploy") == 0) {
-                handle_deploy_command(server_fd, command, username, parsed);
+                handle_deploy_command(server_fd);
             } else if (strcmp(command, "remove") == 0) {
-                handle_remove_command(server_fd, command, username, parsed);
+                handle_remove_command(server_fd, username, parsed);
             } else if (strcmp(command, "log") == 0) {
                 handle_log_command(server_fd);
             } else {

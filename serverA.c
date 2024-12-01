@@ -96,9 +96,8 @@ void decrypt(char* encrypted, char* decrypted) {
 }
 
 int authenticate(char *username, char *password) {
-    printf("authenticating %s %s\n", username, password);
+    printf("Debug: Starting authentication for user: %s\n", username);
     
-    // Open both files
     FILE *encrypted_file = fopen("members.txt", "r");
     FILE *original_file = fopen("original.txt", "r");
     
@@ -126,13 +125,8 @@ int authenticate(char *username, char *password) {
         sscanf(encrypted_line, "%s %s", encrypted_username, encrypted_password);
         sscanf(original_line, "%s %s", original_username, original_password);
         
-        printf("Checking user: %s\n", encrypted_username);
-        
-        // Verify username matches in both files
-        if (strcmp(encrypted_username, original_username) != 0) {
-            printf("Error: Username mismatch between files\n");
-            continue;
-        }
+        printf("Debug: Comparing with entry - encrypted: %s, original: %s\n", 
+               encrypted_username, original_username);
         
         // Check if this is the user we're looking for
         if (strcmp(username, encrypted_username) == 0) {
@@ -140,20 +134,20 @@ int authenticate(char *username, char *password) {
             char decrypted_password[50];
             decrypt(encrypted_password, decrypted_password);
             
-            printf("Found user %s\n", username);
-            printf("Encrypted password: %s\n", encrypted_password);
-            printf("Decrypted password: %s\n", decrypted_password);
-            printf("Original password: %s\n", original_password);
-            printf("Provided password: %s\n", password);
+            printf("Debug: Found matching username\n");
+            printf("Debug: Encrypted password: %s\n", encrypted_password);
+            printf("Debug: Decrypted password: %s\n", decrypted_password);
+            printf("Debug: Original password: %s\n", original_password);
+            printf("Debug: Provided password: %s\n", password);
             
-            // If decryption works and provided password matches decrypted password
-            if (strcmp(decrypted_password, original_password) == 0) {
-                printf("%s has been authenticated\n", username);
+            // Compare with provided password
+            if (strcmp(password, original_password) == 0) {
+                printf("MEMBER %s has been authenticated\n", username);
                 fclose(encrypted_file);
                 fclose(original_file);
                 return 1; // success
             } else {
-                printf("Password incorrect for user %s\n", username);
+                printf("Debug: Password mismatch\n");
                 fclose(encrypted_file);
                 fclose(original_file);
                 return 0; // fail
@@ -162,7 +156,7 @@ int authenticate(char *username, char *password) {
     }
     
     if (!found) {
-        printf("Username %s not found\n", username);
+        printf("Debug: Username %s not found in files\n", username);
     }
     
     fclose(encrypted_file);
