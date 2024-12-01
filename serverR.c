@@ -56,25 +56,29 @@ char* get_user_files(const char* username) {
 
 int file_exists(const char* username, const char* filename) {
     FILE* file = fopen("filenames.txt", "r");
-    if (!file) return 0;
+    if (!file) {
+        perror("Cannot open filenames.txt");
+        return 0;
+    }
 
     char line[BUFFER_SIZE];
     char current_username[100], current_filename[100];
     
-    // Skip header
+    // Skip header line
     fgets(line, sizeof(line), file);
     
+    // Read each line and check for username/filename match
     while (fgets(line, sizeof(line), file)) {
         sscanf(line, "%s %s", current_username, current_filename);
         if (strcmp(current_username, username) == 0 && 
             strcmp(current_filename, filename) == 0) {
             fclose(file);
-            return 1;
+            return 1;  // File exists for this user
         }
     }
     
     fclose(file);
-    return 0;
+    return 0;  // File not found
 }
 
 void add_file_entry(const char* username, const char* filename) {
@@ -177,9 +181,10 @@ int main() {
             sscanf(buffer, "PUSH %s %s", username, filename);
             printf("Server R has received a push request from the main server.\n");
 
+            // Check if file exists for this user
             if (file_exists(username, filename)) {
                 printf("%s exists in %s's repository; requesting overwrite confirmation.\n", filename, username);
-                sprintf(buffer, "File exists. Do you want to overwrite?");
+                sprintf(buffer, "OVERWRITE_CONFIRM");
                 sendto(server_fd, buffer, strlen(buffer), 0,
                        (struct sockaddr *)&address, addrlen);
                 
@@ -188,28 +193,24 @@ int main() {
                               (struct sockaddr *)&address, (socklen_t*)&addrlen);
                 buffer[len] = '\0';
                 
-                char response_type[20], decision[10];
-                sscanf(buffer, "%s %s", response_type, decision);
-                
-                if (strcmp(decision, "Y") == 0) {
-                    // Remove the existing file entry
-                    if (remove_file_entry(username, filename)) {
-                        printf("User requested overwrite; overwrite successful.\n");
-                    }
-                    // Add new file entry
+                if (buffer[0] == 'Y' || buffer[0] == 'y') {
+                    // Remove existing entry before adding new one
+                    remove_file_entry(username, filename);
                     add_file_entry(username, filename);
-                    sprintf(buffer, "File overwritten successfully");
+                    printf("User requested overwrite; overwrite successful.\n");
+                    sprintf(buffer, "successful");
                 } else {
                     printf("Overwrite denied\n");
-                    sprintf(buffer, "Push cancelled");
+                    sprintf(buffer, "unsuccessful");
                 }
             } else {
                 // Add new file entry to filenames.txt
                 add_file_entry(username, filename);
                 printf("%s uploaded successfully.\n", filename);
-                sprintf(buffer, "File pushed successfully");
+                sprintf(buffer, "successful");
             }
             
+            // Send final response
             sendto(server_fd, buffer, strlen(buffer), 0,
                    (struct sockaddr *)&address, addrlen);
         } else if (strcmp(request_type, "REMOVE") == 0) {

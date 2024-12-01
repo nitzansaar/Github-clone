@@ -8,10 +8,8 @@
 #include <ctype.h> 
 #include <stdbool.h>
 #define PORT 21690
-//add another port for guests so they can both connect at the same time
 #define GUEST_PORT 21691
 
-// Add these color definitions at the top of the file
 #define PURPLE "\033[35m"
 #define RESET "\033[0m"
 
@@ -22,13 +20,10 @@ Currently, we exit the program after authentication.
 So we need to change that so that the client can keep running and interacting with the server.
 */
 
-// Add these with other global variables at the top of the file
 char authenticated_user[50] = {0};
 bool is_guest = false;
 
-// Add this with the other function prototypes near the top of the file
 void log_operation(const char* username, const char* operation, const char* details);
-
 void handle_lookup_command(int server_fd, const char* username, int parsed);
 void handle_push_command(int server_fd, const char* filename, int parsed);
 void handle_deploy_command(int server_fd);
@@ -178,6 +173,7 @@ int authenticate_user(int server_fd, const char* username, const char* password)
 void handle_push_command(int server_fd, const char* filename, int parsed) {
     char buffer[1024];
     char push_msg[1024];
+    char answer[10] = {0};
     
     // Check if filename is specified
     if (parsed != 2) {
@@ -215,13 +211,19 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
     buffer[len] = '\0';
     
     // Handle overwrite confirmation if needed
-    if (strstr(buffer, "exists") != NULL) {
+    if (strstr(buffer, "exists") != NULL || strstr(buffer, "OVERWRITE_CONFIRM") != NULL) {
         printf("%s exists in %s's repository, do you want to overwrite (Y/N)? ", 
                filename, authenticated_user);
         
-        char answer[10];
         fgets(answer, sizeof(answer), stdin);
         answer[strcspn(answer, "\n")] = '\0';
+        
+        // If user says no, don't proceed with push
+        if (answer[0] == 'N' || answer[0] == 'n') {
+            printf("%s was not pushed successfully.\n", filename);
+            printf("----Start a new request----\n");
+            return;
+        }
         
         // Send overwrite response
         send(server_fd, answer, strlen(answer), 0);
@@ -238,8 +240,8 @@ void handle_push_command(int server_fd, const char* filename, int parsed) {
         buffer[len] = '\0';
     }
     
-    // Print final result
-    if (strstr(buffer, "successfully") != NULL) {
+    // Print final result based on server's response
+    if (strstr(buffer, "successful") != NULL) {
         printf("%s pushed successfully\n", filename);
     } else {
         printf("%s was not pushed successfully.\n", filename);

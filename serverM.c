@@ -163,18 +163,10 @@ char* handle_lookup(int udp_socket, struct sockaddr_in server_r_addr,
 
 // Function to handle push requests
 char* handle_push(int udp_socket, struct sockaddr_in server_r_addr, 
-                 const char* username, const char* filename, const UserSession* session) {
+                 const char* username, const char* filename, const UserSession* session, int client_socket) {
     static char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
 
-    // Initial push request received
-    printf("The main server has received a push request from %s, using TCP over port %d.\n", 
-           username, MAIN_TCP_PORT);
-
-    if (!session->is_authenticated || session->is_guest) {
-        return "Error: Only authenticated members can push files";
-    }
-    
     // Send push request to Server R
     snprintf(buffer, BUFFER_SIZE, "PUSH %s %s", username, filename);
     
@@ -182,40 +174,39 @@ char* handle_push(int udp_socket, struct sockaddr_in server_r_addr,
                (struct sockaddr*)&server_r_addr, sizeof(server_r_addr)) < 0) {
         return "Error: Failed to send push request";
     }
-
-    printf("The main server has sent the push request to server R.\n");
-
+    
     // Receive response from Server R
     socklen_t server_len = sizeof(server_r_addr);
     int response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
                                (struct sockaddr*)&server_r_addr, &server_len);
-    
     if (response_len < 0) {
         return "Error: Failed to receive push response";
     }
-
     response[response_len] = '\0';
 
-    if (strstr(response, "overwrite") != NULL) {
-        printf("The main server has received the response from server R using UDP over %d, asking for overwrite confirmation\n", 
-               MAIN_TCP_PORT);
+    // If overwrite confirmation is needed
+    if (strstr(response, "OVERWRITE_CONFIRM") != NULL) {
+        // Forward the confirmation request to client
+        send(client_socket, response, strlen(response), 0);
         
-        // Send overwrite confirmation request to client
-        printf("The main server has sent the overwrite confirmation request to the client.\n");
+        // Get client's response
+        char client_response[10];
+        recv(client_socket, client_response, sizeof(client_response) - 1, 0);
         
-        // After receiving overwrite confirmation from client
-        printf("The main server has received the overwrite confirmation response from %s using TCP over port %d\n", 
-               username, MAIN_TCP_PORT);
+        // If user declined overwrite, return unsuccessful
+        if (client_response[0] == 'N' || client_response[0] == 'n') {
+            return "unsuccessful";
+        }
         
-        // After sending overwrite confirmation to Server R
-        printf("The main server has sent the overwrite confirmation response to server R.\n");
-    } else {
-        printf("The main server has received the response from server R using UDP over %d\n", 
-               MAIN_TCP_PORT);
+        // Forward client's response to Server R
+        sendto(udp_socket, client_response, strlen(client_response), 0,
+               (struct sockaddr*)&server_r_addr, sizeof(server_r_addr));
+        
+        // Get final response from Server R
+        response_len = recvfrom(udp_socket, response, BUFFER_SIZE - 1, 0,
+                               (struct sockaddr*)&server_r_addr, &server_len);
+        response[response_len] = '\0';
     }
-
-    // Before sending final response to client
-    printf("The main server has sent the response to the client.\n");
 
     return response;
 }
@@ -398,7 +389,7 @@ void* handle_client(void* arg) {
 
             response = handle_push(server_resources.udp_socket,
                                  server_resources.server_r_addr,
-                                 conn->session.username, arg1, &conn->session);
+                                 conn->session.username, arg1, &conn->session, conn->socket);
         }
         else if (strcmp(command, "DEPLOY") == 0) {
             printf("The main server has received a deploy request from member %s TCP over port %d.\n",
